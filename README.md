@@ -1,15 +1,18 @@
 # Stock-Monitor
 
-A personal, **ML-powered stock research tool**. It scans the market, scores each stock's conviction with a transparent explanation of _why_, and sends alerts — so investment research doesn't require constant manual effort.
+A personal, **ML-powered stock research & recommendation tool**. It scans the market, **recommends when to buy and when to sell**, tracks the positions you hold (or agreed to buy), and continuously monitors news + signals to flag exits — all with a transparent explanation of _why_ — so investment research doesn't require constant manual effort.
 
-> **Decision-support only.** This tool ranks, explains, and alerts. It never places trades — every buy/sell decision stays with the user. Not financial advice.
+> **You execute every trade.** The tool recommends (buy _and_ sell), explains, tracks your holdings, and alerts — but it never places trades automatically; you make and execute the final call. It is a personal tool, **not** a licensed financial advisor, and **not** advice for anyone else.
 
 ## What it does
 
-- **Daily automated scan** of a broad universe (S&P 500 → wider) to surface high-conviction opportunities.
+- **Buy _and_ sell recommendations** — not just scores: actionable "consider buying / hold / consider trimming / consider selling" calls, each with reasoning.
+- **Daily automated scan** of a broad universe (S&P 500 → wider) to surface high-conviction _entry_ opportunities.
+- **Position & portfolio tracking** — knows what you hold (or agreed to buy) and watches those names continuously.
+- **Exit monitoring** — watches news, fundamentals, and signals on your holdings to flag _when to sell or trim_, not just when to buy.
 - **On-demand lookup** — search any ticker for an instant, explained conviction score.
 - **Explainable ML** — a calibrated conviction score (0–100) with a per-stock breakdown of the top contributing factors (no black boxes).
-- **Alerts** when a stock enters high conviction, a watchlist name moves sharply, or earnings approach.
+- **Alerts** on entry signals, exit/sell signals, sharp moves, and approaching earnings.
 
 ## How it works
 
@@ -17,6 +20,7 @@ A personal, **ML-powered stock research tool**. It scans the market, scores each
 2. **Label** — forward return (e.g. beat the S&P over the next 6–12 months); history supplies labels automatically.
 3. **Model** — gradient boosting (XGBoost/LightGBM) + **SHAP** for explainability; FinBERT for news sentiment.
 4. **Trust** — walk-forward (time-aware) validation, out-of-sample testing, confidence calibration, paper mode before any real reliance.
+5. **Position monitoring & exits** — held positions (and agreed buys) are re-scored continuously; a falling conviction or material negative news triggers a **sell/trim recommendation**. Both _entry_ and _exit_ are modeled — the tool tells you when to onload **and** offload.
 
 ## Tech stack
 
@@ -39,7 +43,7 @@ A personal, **ML-powered stock research tool**. It scans the market, scores each
 - **Phase 1** — Feature pipeline + gradient-boosting model + SQLite + Next.js dashboard (on-demand lookups).
 - **Phase 2** — Backtesting + walk-forward validation + confidence calibration.
 - **Phase 3** — Full-universe daily scan + ranked opportunities + Telegram alerts + risk flags + earnings calendar.
-- **Phase 4** — FinBERT news-sentiment pillar; containerize → kind → Prometheus/Grafana.
+- **Phase 4** — **Position tracking + exit/sell recommendations** (monitor holdings, news-driven sell signals) + FinBERT news-sentiment pillar; containerize → kind → Prometheus/Grafana.
 - **Phase 5** — Paid data tier, AKS/Vercel deploy, polish, advanced models.
 
 ## Setup
@@ -48,4 +52,4 @@ _TBD — populated as Phase 0 lands. Secrets/API keys go in a local `.env` (neve
 
 ## Disclaimer
 
-For personal, educational use. Not investment advice. Markets carry risk; the tool's scores are estimates, not guarantees.
+Personal tool for the author's own use — it provides buy/sell recommendations **to its user**, who executes every trade manually. It is **not** a licensed financial advisor and is **not** financial advice for anyone else. Markets carry risk; scores and recommendations are estimates, not guarantees.

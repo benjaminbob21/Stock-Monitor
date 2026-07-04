@@ -70,8 +70,27 @@ export interface PositionView {
   sold_price?: number | null;
   signal: string;
   expert_view: string;
+  sentiment_score?: number | null;
+  sentiment_label?: string | null;
 }
 
 export interface PositionsResponse {
   positions: PositionView[];
+}
+
+export interface NewsItem {
+  headline: string;
+  url: string;
+  source: string;
+  published: string | null;
+  sentiment: number | null;
+}
+
+export interface NewsResponse {
+  ticker: string;
+  score: number;
+  label: string;
+  count: number;
+  backend: string;
+  items: NewsItem[];
 }

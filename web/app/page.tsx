@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ConvictionCard } from "@/components/ConvictionCard";
+import { NewsPanel } from "@/components/NewsPanel";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
 import type {
   ApiError,
+  NewsResponse,
   OpportunitiesResponse,
   Opportunity,
   PositionsResponse,
@@ -22,6 +24,7 @@ export default function Home() {
 
   const [ticker, setTicker] = useState("");
   const [data, setData] = useState<ScoreResponse | null>(null);
+  const [news, setNews] = useState<NewsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -85,6 +88,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setData(null);
+    setNews(null);
     try {
       const res = await fetch(`/api/score/${encodeURIComponent(clean)}`);
       const body = (await res.json()) as ScoreResponse | ApiError;
@@ -92,6 +96,12 @@ export default function Home() {
         setError((body as ApiError).detail ?? `request failed (${res.status})`);
       } else {
         setData(body as ScoreResponse);
+        try {
+          const nres = await fetch(`/api/news/${encodeURIComponent(clean)}`);
+          if (nres.ok) setNews((await nres.json()) as NewsResponse);
+        } catch {
+          /* news is optional */
+        }
       }
     } catch {
       setError("could not reach the scoring service");
@@ -180,6 +190,7 @@ export default function Home() {
 
           {error && <div className="status error">{error}</div>}
           {data && <ConvictionCard data={data} />}
+          {news && <NewsPanel news={news} />}
 
           <div className="opps-header">
             <h2>Ranked opportunities</h2>

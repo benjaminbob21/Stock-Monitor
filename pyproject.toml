@@ -28,10 +28,12 @@ dependencies = [
     "uvicorn[standard]",
     "apscheduler",
     "tenacity",
+    "vaderSentiment",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy", "httpx"]
+finbert = ["transformers", "torch"]
 
 [project.scripts]
 stock-monitor = "stock_monitor.cli:main"

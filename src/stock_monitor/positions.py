@@ -19,13 +19,19 @@ import uuid
 
 from stock_monitor.models.scorer import Scoreable
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
+from stock_monitor.sentiment import NewsProvider, SentimentAnalyzer, analyze_ticker
 from stock_monitor.service import score_ticker
 from stock_monitor.storage.db import Storage
 
 # Exit thresholds on the calibrated conviction (mirrors the buy-side bands).
 SELL_BELOW = 40
 TRIM_BELOW = 55
-_MATERIAL_FLAGS = {"negative_earnings", "extreme_volatility_cap", "penny_stock_cap"}
+_MATERIAL_FLAGS = {
+    "negative_earnings",
+    "extreme_volatility_cap",
+    "penny_stock_cap",
+    "negative_news",
+}
 
 
 def exit_signal(conviction: int, risk_flags: list[str]) -> str:
@@ -126,8 +132,16 @@ def position_view(
     model_version: str,
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
+    news_provider: NewsProvider | None = None,
+    analyzer: SentimentAnalyzer | None = None,
+    negative_threshold: float = -0.25,
+    news_lookback_days: int = 7,
 ) -> dict:
-    """Re-score a tracked position and attach live status + both exit reads."""
+    """Re-score a tracked position and attach live status + both exit reads.
+
+    If a news provider + analyzer are supplied, material negative news adds a
+    ``negative_news`` flag that tips the exit signal toward sell (build-plan §5).
+    """
     scored = _score_now(
         position["ticker"], model, model_version, price_provider, fundamental_provider
     )
@@ -139,6 +153,20 @@ def position_view(
     entry_conviction = position["entry_conviction"]
     price_change = _pct_change(current_price, entry_price)
 
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
+    if news_provider is not None and analyzer is not None and position["status"] == "open":
+        try:
+            report = analyze_ticker(
+                position["ticker"], news_provider, analyzer, news_lookback_days
+            )
+            sentiment_score = round(report.score, 3)
+            sentiment_label = report.label
+            if report.count and report.score < negative_threshold:
+                flags.append("negative_news")
+        except Exception:  # noqa: BLE001 — news is optional; never break the view
+            pass
+
     if position["status"] == "sold":
         signal = "sold"
         expert = "You sold this position — tracking how it has moved since."
@@ -147,6 +175,10 @@ def position_view(
         expert = expert_view(
             entry_conviction, current_conviction, price_change, scored["drivers"], signal
         )
+        if sentiment_label == "negative":
+            expert += f" Recent news skews negative (sentiment {sentiment_score})."
+        elif sentiment_label == "positive":
+            expert += " Recent news skews positive."
 
     since_sold = _pct_change(current_price, position.get("sold_price"))
 
@@ -159,6 +191,8 @@ def position_view(
         "price_change_pct": price_change,
         "conviction_change": current_conviction - entry_conviction,
         "since_sold_pct": since_sold,
+        "sentiment_score": sentiment_score,
+        "sentiment_label": sentiment_label,
         "signal": signal,
         "expert_view": expert,
     }
@@ -170,6 +204,10 @@ def list_position_views(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     storage: Storage,
+    news_provider: NewsProvider | None = None,
+    analyzer: SentimentAnalyzer | None = None,
+    negative_threshold: float = -0.25,
+    news_lookback_days: int = 7,
 ) -> list[dict]:
     """Return every tracked position with a fresh live status."""
     views: list[dict] = []
@@ -177,7 +215,15 @@ def list_position_views(
         try:
             views.append(
                 position_view(
-                    position, model, model_version, price_provider, fundamental_provider
+                    position,
+                    model,
+                    model_version,
+                    price_provider,
+                    fundamental_provider,
+                    news_provider=news_provider,
+                    analyzer=analyzer,
+                    negative_threshold=negative_threshold,
+                    news_lookback_days=news_lookback_days,
                 )
             )
         except Exception:  # noqa: BLE001 — a data hiccup shouldn't hide the whole list

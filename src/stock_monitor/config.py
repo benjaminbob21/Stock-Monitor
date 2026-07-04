@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Optional data keys (activated when set).
     finnhub_api_key: str = ""
 
+    # News / sentiment pillar.
+    news_lookback_days: int = 7
+    sentiment_negative_threshold: float = -0.25  # below this = material negative news
+    sentiment_backend: str = "vader"  # "vader" (default) or "finbert" (needs [finbert])
+
     # Scheduler + heartbeat.
     scan_hour: int = 22  # local hour for the daily universe scan
     heartbeat_max_age_hours: int = 26  # alert if no successful scan within this window

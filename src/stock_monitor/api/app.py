@@ -26,6 +26,13 @@ from stock_monitor.positions import (
 )
 from stock_monitor.providers.edgar_provider import EdgarProvider
 from stock_monitor.providers.yfinance_provider import YFinanceProvider
+from stock_monitor.sentiment import (
+    NewsProvider,
+    SentimentAnalyzer,
+    analyze_ticker,
+    get_news_provider,
+    get_sentiment_analyzer,
+)
 from stock_monitor.service import (
     DataQuarantined,
     InsufficientHistory,
@@ -47,6 +54,10 @@ class AppState:
     db_path: str | None
     label_window_months: int
     model_short: Scoreable | None = None
+    news_provider: NewsProvider | None = None
+    analyzer: SentimentAnalyzer | None = None
+    news_lookback_days: int = 7
+    sentiment_negative_threshold: float = -0.25
 
 
 _state: AppState | None = None
@@ -65,6 +76,10 @@ def build_state() -> AppState:
         db_path=settings.db_path,
         label_window_months=settings.label_window_months,
         model_short=load_model(settings.model_path_short),
+        news_provider=get_news_provider(settings),
+        analyzer=get_sentiment_analyzer(settings),
+        news_lookback_days=settings.news_lookback_days,
+        sentiment_negative_threshold=settings.sentiment_negative_threshold,
     )
 
 
@@ -176,7 +191,7 @@ def _require_ready(state: AppState) -> None:
 
 @app.get("/positions")
 def positions(state: StateDep) -> dict[str, object]:
-    """List tracked positions with a fresh live status + exit reads."""
+    """List tracked positions with a fresh live status + exit reads (news-aware)."""
     if state.model is None or not state.db_path:
         return {"positions": []}
     with Storage(state.db_path) as store:
@@ -186,8 +201,42 @@ def positions(state: StateDep) -> dict[str, object]:
             state.price_provider,  # type: ignore[arg-type]
             state.fundamental_provider,  # type: ignore[arg-type]
             store,
+            news_provider=state.news_provider,
+            analyzer=state.analyzer,
+            negative_threshold=state.sentiment_negative_threshold,
+            news_lookback_days=state.news_lookback_days,
         )
     return {"positions": views}
+
+
+@app.get("/news/{ticker}")
+def news(ticker: str, state: StateDep) -> dict[str, object]:
+    """Recent headlines for a ticker with per-headline + aggregate sentiment."""
+    if state.news_provider is None or state.analyzer is None:
+        return {"ticker": ticker.upper(), "score": 0.0, "label": "neutral", "items": []}
+    report = analyze_ticker(
+        ticker,
+        state.news_provider,
+        state.analyzer,
+        lookback_days=state.news_lookback_days,
+    )
+    return {
+        "ticker": report.ticker,
+        "score": round(report.score, 3),
+        "label": report.label,
+        "count": report.count,
+        "backend": report.backend,
+        "items": [
+            {
+                "headline": i.headline,
+                "url": i.url,
+                "source": i.source,
+                "published": i.published.isoformat() if i.published else None,
+                "sentiment": round(i.sentiment, 3) if i.sentiment is not None else None,
+            }
+            for i in report.items
+        ],
+    }
 
 
 @app.post("/positions/{ticker}")

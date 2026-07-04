@@ -26,6 +26,8 @@ dependencies = [
     "mlflow",
     "fastapi",
     "uvicorn[standard]",
+    "apscheduler",
+    "tenacity",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,8 @@ stock-monitor = "stock_monitor.cli:main"
 stock-monitor-train = "stock_monitor.pipeline:main"
 stock-monitor-validate = "stock_monitor.evaluation:main"
 stock-monitor-backtest = "stock_monitor.backtest:main"
+stock-monitor-scan = "stock_monitor.scan:main"
+stock-monitor-scheduler = "stock_monitor.scheduler:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

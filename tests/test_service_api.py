@@ -15,7 +15,7 @@ def _state(world: SimpleNamespace, model_loaded: bool = True) -> AppState:
         model_version=world.version if model_loaded else None,
         price_provider=world.price_provider,
         fundamental_provider=world.fundamental_provider,
-        storage=None,
+        db_path=None,
         label_window_months=12,
     )
 

@@ -68,6 +68,39 @@ CREATE TABLE IF NOT EXISTS quarantine (
     reason VARCHAR,
     quarantined_at TIMESTAMP DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS opportunities (
+    scan_ts TIMESTAMP,
+    rank INTEGER,
+    ticker VARCHAR,
+    conviction INTEGER,
+    capped_conviction INTEGER,
+    recommendation VARCHAR,
+    as_of DATE,
+    risk_flags VARCHAR,
+    model_version VARCHAR
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+    job VARCHAR,
+    status VARCHAR,
+    detail VARCHAR,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS positions (
+    id VARCHAR PRIMARY KEY,
+    ticker VARCHAR,
+    added_at TIMESTAMP,
+    entry_price DOUBLE,
+    entry_conviction INTEGER,
+    entry_recommendation VARCHAR,
+    entry_drivers VARCHAR,
+    status VARCHAR DEFAULT 'open',
+    sold_at TIMESTAMP,
+    sold_price DOUBLE
+);
 """
 
 
@@ -181,10 +214,172 @@ class Storage:
 
     def count(self, table: str) -> int:
         """Return the row count of one of the known tables."""
-        if table not in {"features", "scores", "quarantine"}:
+        if table not in {"features", "scores", "quarantine", "opportunities", "runs", "positions"}:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
         return int(result[0]) if result else 0
+
+    def add_position(
+        self,
+        position_id: str,
+        ticker: str,
+        added_at: dt.datetime,
+        entry_price: float,
+        entry_conviction: int,
+        entry_recommendation: str,
+        entry_drivers: list[dict],
+    ) -> None:
+        """Record a new tracked position (a buy the user made)."""
+        self._con.execute(
+            """
+            INSERT INTO positions
+                (id, ticker, added_at, entry_price, entry_conviction,
+                 entry_recommendation, entry_drivers, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+            """,
+            [
+                position_id,
+                ticker,
+                added_at,
+                entry_price,
+                entry_conviction,
+                entry_recommendation,
+                json.dumps(entry_drivers),
+            ],
+        )
+
+    def _position_row(self, row: tuple) -> dict:
+        return {
+            "id": row[0],
+            "ticker": row[1],
+            "added_at": row[2].isoformat() if row[2] is not None else None,
+            "entry_price": row[3],
+            "entry_conviction": row[4],
+            "entry_recommendation": row[5],
+            "entry_drivers": json.loads(row[6]) if row[6] else [],
+            "status": row[7],
+            "sold_at": row[8].isoformat() if row[8] is not None else None,
+            "sold_price": row[9],
+        }
+
+    def list_positions(self) -> list[dict]:
+        """Return all tracked positions (open and sold), newest first."""
+        rows = self._con.execute(
+            """
+            SELECT id, ticker, added_at, entry_price, entry_conviction,
+                   entry_recommendation, entry_drivers, status, sold_at, sold_price
+            FROM positions ORDER BY added_at DESC
+            """
+        ).fetchall()
+        return [self._position_row(r) for r in rows]
+
+    def get_position(self, position_id: str) -> dict | None:
+        row = self._con.execute(
+            """
+            SELECT id, ticker, added_at, entry_price, entry_conviction,
+                   entry_recommendation, entry_drivers, status, sold_at, sold_price
+            FROM positions WHERE id = ?
+            """,
+            [position_id],
+        ).fetchone()
+        return self._position_row(row) if row is not None else None
+
+    def close_position(
+        self, position_id: str, sold_at: dt.datetime, sold_price: float
+    ) -> None:
+        """Mark a position sold, recording the date and price."""
+        self._con.execute(
+            "UPDATE positions SET status = 'sold', sold_at = ?, sold_price = ? WHERE id = ?",
+            [sold_at, sold_price, position_id],
+        )
+
+    def record_run(
+        self,
+        job: str,
+        status: str,
+        detail: str,
+        started_at: dt.datetime,
+        finished_at: dt.datetime,
+    ) -> None:
+        """Record a job run for the heartbeat / 'last successful run' check."""
+        self._con.execute(
+            "INSERT INTO runs (job, status, detail, started_at, finished_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [job, status, detail, started_at, finished_at],
+        )
+
+    def read_last_run(self, job: str, status: str | None = None) -> dict | None:
+        """Return the most recent run for ``job`` (optionally filtered by status)."""
+        query = (
+            "SELECT job, status, detail, started_at, finished_at FROM runs WHERE job = ?"
+        )
+        params: list[object] = [job]
+        if status is not None:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY finished_at DESC LIMIT 1"
+        row = self._con.execute(query, params).fetchone()
+        if row is None:
+            return None
+        return {
+            "job": row[0],
+            "status": row[1],
+            "detail": row[2],
+            "started_at": row[3].isoformat() if row[3] is not None else None,
+            "finished_at": row[4].isoformat() if row[4] is not None else None,
+        }
+
+    def save_opportunities(self, scan_ts: dt.datetime, rows: list[dict]) -> int:
+        """Replace the stored ranking with a fresh scan (latest scan wins)."""
+        self._con.execute("DELETE FROM opportunities")
+        for row in rows:
+            self._con.execute(
+                """
+                INSERT INTO opportunities
+                    (scan_ts, rank, ticker, conviction, capped_conviction,
+                     recommendation, as_of, risk_flags, model_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    scan_ts,
+                    row.get("rank"),
+                    row.get("ticker"),
+                    row.get("conviction"),
+                    row.get("capped_conviction"),
+                    row.get("recommendation"),
+                    row.get("as_of"),
+                    json.dumps(row.get("risk_flags", [])),
+                    row.get("model_version"),
+                ],
+            )
+        return len(rows)
+
+    def read_latest_opportunities(self, limit: int = 20) -> list[dict]:
+        """Return the most recent ranking (top ``limit`` by rank)."""
+        rows = self._con.execute(
+            """
+            SELECT scan_ts, rank, ticker, conviction, capped_conviction,
+                   recommendation, as_of, risk_flags, model_version
+            FROM opportunities
+            ORDER BY rank
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
+        return [
+            {
+                "scan_ts": r[0].isoformat() if r[0] is not None else None,
+                "rank": r[1],
+                "ticker": r[2],
+                "conviction": r[3],
+                "capped_conviction": r[4],
+                "recommendation": r[5],
+                "as_of": r[6].isoformat() if r[6] is not None else None,
+                "risk_flags": json.loads(r[7]) if r[7] else [],
+                "model_version": r[8],
+            }
+            for r in rows
+        ]
 
     def read_features(self) -> pd.DataFrame:
         """Return all stored feature rows as a DataFrame."""

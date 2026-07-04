@@ -13,7 +13,7 @@ import pandas as pd
 
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
-from stock_monitor.models.scorer import Scoreable, score_row
+from stock_monitor.models.scorer import Scoreable, recommendation_band, score_row
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.storage.db import Storage
 
@@ -33,6 +33,14 @@ _CALIBRATED_NOTE = (
 
 # Risk-flag thresholds (Phase 1, deliberately simple).
 _HIGH_VOL = 0.60
+
+# Hard caps: a red flag ceilings the score no matter how bullish the model is
+# (build-plan §7 Phase 3). Better to under-rank a landmine than chase it.
+_PENNY_PRICE = 5.0
+_EXTREME_VOL = 0.80
+_PENNY_CAP = 15
+_EXTREME_VOL_CAP = 40
+_NO_FUNDAMENTALS_CAP = 50
 
 
 class TickerDataUnavailable(Exception):
@@ -63,6 +71,33 @@ def risk_flags(row: dict[str, object]) -> list[str]:
         flags.append("negative_earnings")
 
     return flags
+
+
+def apply_risk_caps(
+    conviction: int, row: dict[str, object], price: float | None
+) -> tuple[int, list[str]]:
+    """Ceiling the conviction when a hard risk flag fires (build-plan §7 Phase 3).
+
+    Returns the (possibly lowered) conviction and the list of caps that fired. A cap
+    never *raises* a score — it only protects against ranking a landmine near the top.
+    """
+    capped = conviction
+    caps: list[str] = []
+
+    if price is not None and price < _PENNY_PRICE:
+        capped = min(capped, _PENNY_CAP)
+        caps.append("penny_stock_cap")
+
+    vol = _as_float(row.get("vol_3m"))
+    if vol == vol and vol > _EXTREME_VOL:
+        capped = min(capped, _EXTREME_VOL_CAP)
+        caps.append("extreme_volatility_cap")
+
+    if row.get("fundamentals_known_on") is None:
+        capped = min(capped, _NO_FUNDAMENTALS_CAP)
+        caps.append("no_fundamentals_cap")
+
+    return capped, caps
 
 
 def score_ticker(
@@ -99,7 +134,12 @@ def score_ticker(
         raise DataQuarantined(reason)
 
     result = score_row(model, row)
-    flags = risk_flags(row)
+    # Apply the same hard risk caps the scan uses, so the on-demand card and the
+    # ranked list always agree for a given ticker.
+    price = float(prices["close"].iloc[-1])
+    capped, caps = apply_risk_caps(result.conviction, row, price)
+    flags = risk_flags(row) + caps
+    recommendation = recommendation_band(capped)
     drivers = [
         {"feature": d.feature, "value": d.value, "shap": d.shap, "direction": d.direction}
         for d in result.drivers
@@ -112,8 +152,8 @@ def score_ticker(
         storage.insert_score(
             ticker=ticker,
             as_of=as_of,
-            conviction=result.conviction,
-            recommendation=result.recommendation,
+            conviction=capped,
+            recommendation=recommendation,
             model_version=model_version,
             fundamentals_known_on=known_on_date,
             drivers=drivers,
@@ -123,8 +163,10 @@ def score_ticker(
     return {
         "ticker": ticker,
         "as_of": as_of.isoformat(),
-        "conviction": result.conviction,
-        "recommendation": result.recommendation,
+        "conviction": capped,
+        "raw_conviction": result.conviction,
+        "price": price,
+        "recommendation": recommendation,
         "calibrated": result.calibrated,
         "model_version": model_version,
         "fundamentals_known_on": known_on_date.isoformat() if known_on_date else None,
@@ -140,3 +182,33 @@ def _as_float(value: object) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return float("nan")
+
+
+# A recommendation only surfaces when the tool is genuinely confident, so seeing one
+# means something. "Confident" = a high *calibrated* conviction with no risk caps.
+STRONG_CONVICTION = 80
+
+
+def strong_recommendations(
+    opportunities: list[dict], threshold: int = STRONG_CONVICTION
+) -> list[dict]:
+    """Filter a ranking down to only high-confidence, clean 'consider buying' names.
+
+    Each kept row gets a plain-language ``rationale`` (the expert-persona 'why').
+    Deliberately sparse: most scans return few or none — that's the point.
+    """
+    strong: list[dict] = []
+    for opp in opportunities:
+        caps = [f for f in opp.get("risk_flags", []) if f.endswith("_cap")]
+        if (
+            opp.get("capped_conviction", 0) >= threshold
+            and not caps
+            and opp.get("recommendation") == "consider buying"
+        ):
+            row = dict(opp)
+            row["rationale"] = (
+                f"Calibrated conviction {opp['capped_conviction']}/100 with no risk "
+                "caps — a high-confidence read (a probability estimate, not a guarantee)."
+            )
+            strong.append(row)
+    return strong

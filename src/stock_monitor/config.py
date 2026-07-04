@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str = "file:./mlruns"
     mlflow_experiment: str = "stock-monitor"
 
+    # Alerts (Telegram). Empty = fall back to a logging notifier (no secrets needed).
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    alert_conviction_threshold: int = 70
+
+    # Optional data keys (activated when set).
+    finnhub_api_key: str = ""
+
+    # Scheduler + heartbeat.
+    scan_hour: int = 22  # local hour for the daily universe scan
+    heartbeat_max_age_hours: int = 26  # alert if no successful scan within this window
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

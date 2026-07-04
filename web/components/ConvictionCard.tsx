@@ -44,7 +44,8 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           </span>
           <span className="feat">{d.feature}</span>
           <span className="num">
-            value {d.value.toFixed(4)} · shap {d.shap.toFixed(3)}
+            value {Number.isFinite(d.value) ? d.value.toFixed(4) : "n/a"} · shap{" "}
+            {Number.isFinite(d.shap) ? d.shap.toFixed(3) : "n/a"}
           </span>
         </div>
       ))}

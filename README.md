@@ -35,7 +35,7 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Status
 
-🚧 Early development. **Phase 0 built** (explainable CLI), **Phase 1 complete** (multi-factor pipeline + DuckDB + MLflow + FastAPI + Next.js dashboard), and **Phase 2 complete** (trust): purged **walk-forward validation**, confidence **calibration** (Brier + reliability), and a cost-aware **backtest** (drawdown, hit-rate, vs-SPY). The API/UI serve a *calibrated* conviction with SHAP intact. Next: Phase 3 (full-universe daily scan → ranked "top-N to buy" + alerts).
+🚧 Early development. **Phases 0–2 done** (explainable engine, multi-factor pipeline, walk-forward validation + calibration + backtest). **Phase 3 essentially complete**: a daily **universe scan → ranked "buy now" list** with hard risk-flag caps, a sparse **Recommendations** view (high-confidence only), **Telegram/logging alerts**, an **APScheduler** tiered scheduler + heartbeat, and retry/backoff. **Phase 4 started**: a **Tracked positions** tab — add a stock, snapshot the model's call, and get live price-vs-entry + a hold/trim/sell signal with an expert-style read. A **Next.js dashboard** (tabs: Opportunities / Recommendations / Tracked) fronts it all. Remaining: earnings calendar + the FinBERT news pillar.
 
 ### Roadmap
 
@@ -81,6 +81,13 @@ Check the model honestly (Phase 2 — trust):
 ```bash
 stock-monitor-validate --watchlist AAPL MSFT NVDA KO   # purged walk-forward: Brier, AUC, reliability
 stock-monitor-backtest --watchlist AAPL MSFT NVDA KO   # cost-aware backtest: return/CAGR vs SPY, drawdown
+```
+
+Scan the universe and (optionally) run the scheduler (Phase 3):
+
+```bash
+stock-monitor-scan                    # rank the universe → powers the dashboard's Opportunities/Recommendations
+stock-monitor-scheduler               # tiered jobs: universe daily, watchlist hourly, heartbeat hourly
 ```
 
 Secrets/API keys live only in the local `.env` (never committed).

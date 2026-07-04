@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pandas as pd
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from stock_monitor.providers.base import PRICE_COLUMNS, PriceProvider
 
@@ -19,6 +20,11 @@ class YFinanceProvider(PriceProvider):
 
     name = "yfinance"
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=8),
+        reraise=True,
+    )
     def get_prices(self, ticker: str, start: dt.date, end: dt.date) -> pd.DataFrame:
         import yfinance as yf
 

@@ -14,7 +14,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
+import requests
 import requests_cache
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from stock_monitor.config import get_settings
 from stock_monitor.providers.base import FundamentalFact, FundamentalProvider
@@ -57,9 +59,18 @@ class EdgarProvider(FundamentalProvider):
         self._session.headers.update({"User-Agent": settings.sec_user_agent})
         self._ticker_to_cik: dict[str, int] | None = None
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=8),
+        reraise=True,
+    )
+    def _get(self, url: str) -> requests.Response:
+        # Retries transient network errors (not HTTP 4xx/5xx, which callers handle).
+        return self._session.get(url, timeout=30)
+
     def _load_ticker_map(self) -> dict[str, int]:
         if self._ticker_to_cik is None:
-            resp = self._session.get(_TICKERS_URL, timeout=30)
+            resp = self._get(_TICKERS_URL)
             resp.raise_for_status()
             self._ticker_to_cik = {
                 row["ticker"].upper(): int(row["cik_str"])
@@ -78,7 +89,7 @@ class EdgarProvider(FundamentalProvider):
         if cik is None:
             return []
 
-        resp = self._session.get(_COMPANYFACTS_URL.format(cik=cik), timeout=30)
+        resp = self._get(_COMPANYFACTS_URL.format(cik=cik))
         if resp.status_code == 404:
             return []
         resp.raise_for_status()

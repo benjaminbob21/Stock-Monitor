@@ -10,6 +10,9 @@ dependency so tests can override it with fakes — no network required.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -94,10 +97,30 @@ def get_state() -> AppState:
     return _state
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Optionally run the scheduler in-process (one DuckDB owner) for deployments."""
+    settings = get_settings()
+    scheduler = None
+    if settings.run_scheduler:
+        from stock_monitor.notify import get_notifier
+        from stock_monitor.scheduler import build_background_scheduler
+
+        scheduler = build_background_scheduler(settings, get_notifier(settings))
+        scheduler.start()
+        logging.getLogger("stock_monitor.api").info("in-process scheduler started")
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+
+
 app = FastAPI(
     title="Stock-Monitor API",
     version=__version__,
     description="Explainable, human-in-the-loop stock conviction scoring. No auto-trading.",
+    lifespan=lifespan,
 )
 
 StateDep = Annotated[AppState, Depends(get_state)]

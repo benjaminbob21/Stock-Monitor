@@ -1,0 +1,25 @@
+# Backend image only needs src + packaging; keep everything else out.
+.git
+.github
+.venv
+venv
+web
+tests
+data
+models
+mlruns
+mlflow.db
+.cache
+*.duckdb
+*.joblib
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+node_modules
+.next
+*.tsbuildinfo

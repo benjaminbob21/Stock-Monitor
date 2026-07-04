@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from stock_monitor.config import Settings, get_settings
@@ -107,8 +108,8 @@ def _safe(fn, *args) -> None:
         logger.exception("scheduled job failed: %s", getattr(fn, "__name__", fn))
 
 
-def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler:
-    scheduler = BlockingScheduler()
+def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
+    """Register the tiered jobs on any APScheduler instance."""
     scheduler.add_job(
         lambda: _safe(scan_job, settings, notifier),
         "cron",
@@ -140,6 +141,21 @@ def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler
         id="holdings_news",
         replace_existing=True,
     )
+
+
+def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler:
+    """A blocking scheduler for the standalone `stock-monitor-scheduler` command."""
+    scheduler = BlockingScheduler()
+    _add_jobs(scheduler, settings, notifier)
+    return scheduler
+
+
+def build_background_scheduler(
+    settings: Settings, notifier: Notifier
+) -> BackgroundScheduler:
+    """A non-blocking scheduler to run in-process with the API (one DuckDB owner)."""
+    scheduler = BackgroundScheduler()
+    _add_jobs(scheduler, settings, notifier)
     return scheduler
 
 

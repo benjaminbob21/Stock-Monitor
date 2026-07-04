@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # Scheduler + heartbeat.
     scan_hour: int = 22  # local hour for the daily universe scan
     heartbeat_max_age_hours: int = 26  # alert if no successful scan within this window
+    # Run the scheduler in-process with the API (set True in production/containers).
+    run_scheduler: bool = False
 
 
 @lru_cache(maxsize=1)

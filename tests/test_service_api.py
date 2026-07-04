@@ -66,3 +66,34 @@ def test_score_without_model_returns_503(world: SimpleNamespace) -> None:
         assert client.get(f"/score/{world.ticker}").status_code == 503
     finally:
         app.dependency_overrides.clear()
+
+
+def test_api_key_enforced_when_secret_set(
+    world: SimpleNamespace, monkeypatch
+) -> None:
+    import sys
+
+    app_module = sys.modules["stock_monitor.api.app"]
+
+    monkeypatch.setattr(
+        app_module,
+        "get_settings",
+        lambda: SimpleNamespace(api_shared_secret="s3cret", run_scheduler=False),
+    )
+    try:
+        client = _client(_state(world))
+        # /health stays open so uptime checks work without the key.
+        assert client.get("/health").status_code == 200
+        # Protected route rejects missing / wrong keys, accepts the right one.
+        assert client.get(f"/score/{world.ticker}").status_code == 401
+        assert (
+            client.get(
+                f"/score/{world.ticker}", headers={"x-api-key": "nope"}
+            ).status_code
+            == 401
+        )
+        ok = client.get(f"/score/{world.ticker}", headers={"x-api-key": "s3cret"})
+        assert ok.status_code == 200, ok.text
+    finally:
+        app.dependency_overrides.clear()
+

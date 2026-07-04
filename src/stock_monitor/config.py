@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Optional data keys (activated when set).
     finnhub_api_key: str = ""
 
+    # Shared secret protecting the API when exposed publicly. Empty = auth disabled
+    # (local dev). When set, callers must send it as the `X-API-Key` header.
+    api_shared_secret: str = ""
+
     # News / sentiment pillar.
     news_lookback_days: int = 7
     sentiment_negative_threshold: float = -0.25  # below this = material negative news

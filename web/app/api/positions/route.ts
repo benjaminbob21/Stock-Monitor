@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.STOCK_MONITOR_API_URL ?? "http://127.0.0.1:8137";
+import { API_URL, backendHeaders } from "@/lib/backend";
 
 export async function GET() {
   try {
-    const upstream = await fetch(`${API_URL}/positions`, { cache: "no-store" });
+    const upstream = await fetch(`${API_URL}/positions`, {
+      cache: "no-store",
+      headers: backendHeaders(),
+    });
     const body = await upstream.json().catch(() => ({ positions: [] }));
     return NextResponse.json(body, { status: upstream.status });
   } catch {
@@ -24,7 +27,7 @@ export async function POST(request: Request) {
   try {
     const upstream = await fetch(
       `${API_URL}/positions/${encodeURIComponent(ticker)}`,
-      { method: "POST", cache: "no-store" },
+      { method: "POST", cache: "no-store", headers: backendHeaders() },
     );
     const body = await upstream
       .json()

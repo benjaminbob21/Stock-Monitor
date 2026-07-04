@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.STOCK_MONITOR_API_URL ?? "http://127.0.0.1:8137";
+import { API_URL, backendHeaders } from "@/lib/backend";
 
 export async function GET() {
   try {
     const upstream = await fetch(`${API_URL}/recommendations`, {
       cache: "no-store",
+      headers: backendHeaders(),
     });
     const body = await upstream.json().catch(() => ({
       detail: "invalid response from backend",

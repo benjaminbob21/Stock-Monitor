@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.STOCK_MONITOR_API_URL ?? "http://127.0.0.1:8137";
+import { API_URL, backendHeaders } from "@/lib/backend";
 
 export async function POST(
   _request: Request,
@@ -10,7 +10,7 @@ export async function POST(
   try {
     const upstream = await fetch(
       `${API_URL}/positions/${encodeURIComponent(id)}/sell`,
-      { method: "POST", cache: "no-store" },
+      { method: "POST", cache: "no-store", headers: backendHeaders() },
     );
     const body = await upstream
       .json()

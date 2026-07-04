@@ -10,13 +10,14 @@ dependency so tests can override it with fakes — no network required.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 
 from stock_monitor import __version__
 from stock_monitor.config import get_settings
@@ -97,6 +98,20 @@ def get_state() -> AppState:
     return _state
 
 
+def require_api_key(request: Request) -> None:
+    """Reject requests lacking the shared secret when one is configured.
+
+    Auth is disabled (open) when ``API_SHARED_SECRET`` is unset — convenient for
+    local dev. ``/health`` stays open so uptime checks work without the key.
+    """
+    secret = get_settings().api_shared_secret
+    if not secret or request.url.path == "/health":
+        return
+    provided = request.headers.get("x-api-key", "")
+    if not hmac.compare_digest(provided, secret):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Optionally run the scheduler in-process (one DuckDB owner) for deployments."""
@@ -121,6 +136,7 @@ app = FastAPI(
     version=__version__,
     description="Explainable, human-in-the-loop stock conviction scoring. No auto-trading.",
     lifespan=lifespan,
+    dependencies=[Depends(require_api_key)],
 )
 
 StateDep = Annotated[AppState, Depends(get_state)]

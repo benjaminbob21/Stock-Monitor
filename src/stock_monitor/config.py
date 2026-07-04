@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # Where the trained model is persisted for the API to load.
     model_path: str = "models/latest.joblib"
 
+    # Secondary short-horizon model (near-term read alongside the 12-month one).
+    model_path_short: str = "models/latest_3m.joblib"
+    label_window_months_short: int = 3
+
     # MLflow tracking (local file store; gitignored).
     mlflow_tracking_uri: str = "file:./mlruns"
     mlflow_experiment: str = "stock-monitor"

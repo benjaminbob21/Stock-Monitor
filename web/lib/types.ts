@@ -16,6 +16,8 @@ export interface ScoreResponse {
   drivers: Driver[];
   risk_flags: string[];
   disclaimer: string;
+  conviction_3m?: number | null;
+  recommendation_3m?: string | null;
 }
 
 export interface ApiError {

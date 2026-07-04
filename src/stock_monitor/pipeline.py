@@ -72,6 +72,37 @@ def assemble_training_frame(
     return pd.concat(frames, ignore_index=True)
 
 
+def assemble_training_frames(
+    watchlist: list[str],
+    price_provider: PriceProvider,
+    fundamental_provider: FundamentalProvider,
+    horizons: list[int],
+) -> dict[int, pd.DataFrame]:
+    """Fetch each ticker once and build a labelled frame per horizon (no double fetch)."""
+    end = dt.date.today()
+    start = end - dt.timedelta(days=365 * HISTORY_YEARS)
+
+    benchmark = price_provider.get_prices(BENCHMARK, start, end)
+    if benchmark.empty:
+        raise RuntimeError(f"benchmark {BENCHMARK} price history unavailable")
+
+    by_horizon: dict[int, list[pd.DataFrame]] = {h: [] for h in horizons}
+    for ticker in watchlist:
+        prices = price_provider.get_prices(ticker, start, end)
+        if prices.empty:
+            continue
+        facts = fundamental_provider.get_fundamentals(ticker)
+        for horizon in horizons:
+            frame = build_training_frame(ticker, prices, facts, benchmark, horizon)
+            if not frame.empty:
+                by_horizon[horizon].append(frame)
+
+    return {
+        h: pd.concat(v, ignore_index=True) if v else pd.DataFrame()
+        for h, v in by_horizon.items()
+    }
+
+
 def _log_mlflow(
     frame: pd.DataFrame,
     report: ValidationReport,
@@ -115,9 +146,12 @@ def run_training(
     price_provider = price_provider or YFinanceProvider()
     fundamental_provider = fundamental_provider or EdgarProvider()
 
-    pooled = assemble_training_frame(
-        watchlist, price_provider, fundamental_provider, settings.label_window_months
+    long_h = settings.label_window_months
+    short_h = settings.label_window_months_short
+    frames = assemble_training_frames(
+        watchlist, price_provider, fundamental_provider, [long_h, short_h]
     )
+    pooled = frames.get(long_h, pd.DataFrame())
     if pooled.empty:
         raise RuntimeError("no labelled training data could be assembled")
 
@@ -130,6 +164,17 @@ def run_training(
     model = train_calibrated_model(valid)
     version = compute_model_version(model)
     save_model(model, settings.model_path)
+
+    # Secondary short-horizon model (near-term read). Best-effort: if its data is thin
+    # or single-class, skip it — the primary model still ships.
+    short_pooled = frames.get(short_h, pd.DataFrame())
+    if not short_pooled.empty:
+        valid_short, _, _ = validate_features(short_pooled)
+        try:
+            short_model = train_calibrated_model(valid_short)
+            save_model(short_model, settings.model_path_short)
+        except ValueError:
+            pass
 
     x = valid[list(FEATURE_COLUMNS)]
     accuracy = float((model.base.predict(x) == valid["label"].astype(int)).mean())

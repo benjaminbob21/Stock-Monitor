@@ -36,6 +36,18 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
         </div>
       </div>
 
+      {data.conviction_3m !== null && data.conviction_3m !== undefined && (
+        <div className="horizon">
+          <span>
+            <b>12-month</b> {data.conviction}/100 · {data.recommendation}
+          </span>
+          <span>
+            <b>near-term (3-month)</b> {data.conviction_3m}/100 ·{" "}
+            {data.recommendation_3m}
+          </span>
+        </div>
+      )}
+
       <p className="section-label">Top drivers (SHAP)</p>
       {data.drivers.map((d) => (
         <div className="driver" key={d.feature}>

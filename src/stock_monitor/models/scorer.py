@@ -122,6 +122,19 @@ def _unwrap(model: Scoreable) -> tuple[lgb.LGBMClassifier, Calibrator | None]:
     return model, None
 
 
+def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
+    """Return just the 0-100 (calibrated) conviction for a row — no SHAP.
+
+    A lightweight scorer for secondary signals (e.g. the short-horizon model) where
+    we only need the number, not a full explanation.
+    """
+    base, calibrator = _unwrap(model)
+    x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
+    raw = float(base.predict_proba(x)[0, 1])
+    proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
+    return int(round(proba * 100))
+
+
 def _positive_class_shap(explainer: shap.TreeExplainer, x: pd.DataFrame) -> np.ndarray:
     """Return a 1-D SHAP vector for the positive class of a single row."""
     with warnings.catch_warnings():

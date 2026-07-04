@@ -46,6 +46,7 @@ class AppState:
     fundamental_provider: object
     db_path: str | None
     label_window_months: int
+    model_short: Scoreable | None = None
 
 
 _state: AppState | None = None
@@ -63,6 +64,7 @@ def build_state() -> AppState:
         fundamental_provider=EdgarProvider(),
         db_path=settings.db_path,
         label_window_months=settings.label_window_months,
+        model_short=load_model(settings.model_path_short),
     )
 
 
@@ -112,6 +114,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                     fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
                     label_window_months=state.label_window_months,
                     storage=store,
+                    short_model=state.model_short,
                 )
         return score_ticker(
             ticker,
@@ -121,6 +124,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
             fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
             label_window_months=state.label_window_months,
             storage=None,
+            short_model=state.model_short,
         )
     except TickerDataUnavailable as exc:
         raise HTTPException(status_code=404, detail=f"no price data for {ticker.upper()}") from exc

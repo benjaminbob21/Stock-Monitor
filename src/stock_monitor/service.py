@@ -13,7 +13,12 @@ import pandas as pd
 
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
-from stock_monitor.models.scorer import Scoreable, recommendation_band, score_row
+from stock_monitor.models.scorer import (
+    Scoreable,
+    predict_conviction,
+    recommendation_band,
+    score_row,
+)
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.storage.db import Storage
 
@@ -110,6 +115,7 @@ def score_ticker(
     label_window_months: int,
     storage: Storage | None = None,
     today: dt.date | None = None,
+    short_model: Scoreable | None = None,
 ) -> dict[str, object]:
     """Score a single ticker on demand and return a JSON-ready payload."""
     ticker = ticker.upper()
@@ -147,6 +153,13 @@ def score_ticker(
     known_on = row.get("fundamentals_known_on")
     known_on_date = known_on if isinstance(known_on, dt.date) else None
 
+    conviction_3m: int | None = None
+    recommendation_3m: str | None = None
+    if short_model is not None:
+        raw_3m = predict_conviction(short_model, row)
+        conviction_3m, _ = apply_risk_caps(raw_3m, row, price)
+        recommendation_3m = recommendation_band(conviction_3m)
+
     if storage is not None:
         storage.upsert_features(valid)
         storage.insert_score(
@@ -172,6 +185,9 @@ def score_ticker(
         "fundamentals_known_on": known_on_date.isoformat() if known_on_date else None,
         "drivers": drivers,
         "risk_flags": flags,
+        # Near-term (3-month) read alongside the 12-month conviction, when available.
+        "conviction_3m": conviction_3m,
+        "recommendation_3m": recommendation_3m,
         "disclaimer": _GUARDRAIL
         + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
     }

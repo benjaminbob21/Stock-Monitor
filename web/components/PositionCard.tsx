@@ -32,12 +32,25 @@ export function PositionCard({
     (p.price_change_pct ?? 0) >= 0 ? "var(--green)" : "var(--red)";
 
   return (
-    <div className="poscard" style={{ borderColor: sold ? "var(--border)" : `${color}55` }}>
+    <div
+      className="poscard"
+      style={{ borderColor: sold ? "var(--border)" : `${color}55` }}
+    >
       <div className="posrow">
-        <button className="oppticker linklike" onClick={() => onLookup(p.ticker)}>
+        <button
+          className="oppticker linklike"
+          onClick={() => onLookup(p.ticker)}
+        >
           {p.ticker}
         </button>
-        <span className="possignal" style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}>
+        <span
+          className="possignal"
+          style={{
+            color,
+            background: `${color}22`,
+            border: `1px solid ${color}55`,
+          }}
+        >
           {p.signal}
         </span>
         {!sold && (
@@ -60,7 +73,12 @@ export function PositionCard({
           <span className="posval">
             {p.entry_conviction} → {p.current_conviction ?? "—"}
             {p.conviction_change !== undefined && (
-              <em style={{ color: p.conviction_change >= 0 ? "var(--green)" : "var(--red)" }}>
+              <em
+                style={{
+                  color:
+                    p.conviction_change >= 0 ? "var(--green)" : "var(--red)",
+                }}
+              >
                 {" "}
                 {p.conviction_change >= 0 ? "+" : ""}
                 {p.conviction_change}
@@ -82,7 +100,9 @@ export function PositionCard({
       <p className="posexpert">{p.expert_view}</p>
       <div className="posmeta">
         added {p.added_at ? new Date(p.added_at).toLocaleDateString() : "—"}
-        {sold && p.sold_at ? ` · sold ${new Date(p.sold_at).toLocaleDateString()}` : ""}
+        {sold && p.sold_at
+          ? ` · sold ${new Date(p.sold_at).toLocaleDateString()}`
+          : ""}
       </div>
     </div>
   );

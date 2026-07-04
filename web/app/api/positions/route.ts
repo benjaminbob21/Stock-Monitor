@@ -26,7 +26,9 @@ export async function POST(request: Request) {
       `${API_URL}/positions/${encodeURIComponent(ticker)}`,
       { method: "POST", cache: "no-store" },
     );
-    const body = await upstream.json().catch(() => ({ detail: "bad response" }));
+    const body = await upstream
+      .json()
+      .catch(() => ({ detail: "bad response" }));
     return NextResponse.json(body, { status: upstream.status });
   } catch {
     return NextResponse.json(

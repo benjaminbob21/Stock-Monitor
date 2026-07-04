@@ -68,7 +68,11 @@ export default function Home() {
       const res = await fetch("/api/positions");
       const body = (await res.json()) as PositionsResponse;
       setPositions(body.positions ?? []);
-      setPosNote((body.positions ?? []).length === 0 ? "No tracked positions yet." : null);
+      setPosNote(
+        (body.positions ?? []).length === 0
+          ? "No tracked positions yet."
+          : null,
+      );
     } catch {
       setPosNote("could not reach the scoring service");
     }
@@ -116,9 +120,12 @@ export default function Home() {
     setAddBusy(true);
     setPosNote(null);
     try {
-      const res = await fetch(`/api/positions?ticker=${encodeURIComponent(clean)}`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/positions?ticker=${encodeURIComponent(clean)}`,
+        {
+          method: "POST",
+        },
+      );
       if (!res.ok) {
         const body = (await res.json()) as ApiError;
         setPosNote(body.detail ?? `could not add ${clean}`);
@@ -136,7 +143,9 @@ export default function Home() {
   const sellPosition = useCallback(
     async (id: string) => {
       try {
-        await fetch(`/api/positions/${encodeURIComponent(id)}/sell`, { method: "POST" });
+        await fetch(`/api/positions/${encodeURIComponent(id)}/sell`, {
+          method: "POST",
+        });
         await loadPositions();
       } catch {
         setPosNote("could not reach the scoring service");
@@ -149,7 +158,10 @@ export default function Home() {
     <main className="container">
       <div className="header">
         <h1>Stock-Monitor</h1>
-        <p>Ranks the market vs the S&amp;P — you execute every trade. No auto-trading.</p>
+        <p>
+          Ranks the market vs the S&amp;P — you execute every trade. No
+          auto-trading.
+        </p>
       </div>
 
       <nav className="tabs">
@@ -201,7 +213,9 @@ export default function Home() {
             </span>
           </div>
           {oppNote && <div className="status">{oppNote}</div>}
-          {opps.length > 0 && <OpportunitiesList items={opps} onPick={lookup} />}
+          {opps.length > 0 && (
+            <OpportunitiesList items={opps} onPick={lookup} />
+          )}
         </>
       )}
 
@@ -214,7 +228,11 @@ export default function Home() {
           {recNote && <div className="status">{recNote}</div>}
           <div className="reclist">
             {recs.map((r) => (
-              <button key={r.ticker} className="reccard" onClick={() => lookup(r.ticker)}>
+              <button
+                key={r.ticker}
+                className="reccard"
+                onClick={() => lookup(r.ticker)}
+              >
                 <div className="recrow">
                   <span className="oppticker">{r.ticker}</span>
                   <span className="oppscore" style={{ color: "var(--green)" }}>
@@ -252,8 +270,9 @@ export default function Home() {
             </button>
           </form>
           <p className="hint">
-            Snapshots today&apos;s price + the model&apos;s call. Then tracks it and
-            gives you two reads — a crisp signal and an expert view — so you decide.
+            Snapshots today&apos;s price + the model&apos;s call. Then tracks it
+            and gives you two reads — a crisp signal and an expert view — so you
+            decide.
           </p>
 
           <div className="opps-header">
@@ -264,7 +283,12 @@ export default function Home() {
             {positions
               .filter((p) => p.status === "open")
               .map((p) => (
-                <PositionCard key={p.id} p={p} onSell={sellPosition} onLookup={lookup} />
+                <PositionCard
+                  key={p.id}
+                  p={p}
+                  onSell={sellPosition}
+                  onLookup={lookup}
+                />
               ))}
           </div>
 
@@ -278,7 +302,12 @@ export default function Home() {
                 {positions
                   .filter((p) => p.status === "sold")
                   .map((p) => (
-                    <PositionCard key={p.id} p={p} onSell={sellPosition} onLookup={lookup} />
+                    <PositionCard
+                      key={p.id}
+                      p={p}
+                      onSell={sellPosition}
+                      onLookup={lookup}
+                    />
                   ))}
               </div>
             </>

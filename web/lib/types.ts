@@ -18,6 +18,7 @@ export interface ScoreResponse {
   disclaimer: string;
   conviction_3m?: number | null;
   recommendation_3m?: string | null;
+  days_to_earnings?: number | null;
 }
 
 export interface ApiError {

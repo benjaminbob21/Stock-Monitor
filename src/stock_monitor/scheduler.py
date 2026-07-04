@@ -17,12 +17,17 @@ import logging
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from stock_monitor.config import Settings, get_settings
+from stock_monitor.earnings import days_until_earnings, get_earnings_provider
 from stock_monitor.notify import Notifier, get_notifier
 from stock_monitor.pipeline import DEFAULT_WATCHLIST
 from stock_monitor.scan import scan_job
+from stock_monitor.sentiment import analyze_ticker, get_news_provider, get_sentiment_analyzer
 from stock_monitor.storage.db import Storage
 
 logger = logging.getLogger("stock_monitor.scheduler")
+
+_EARNINGS_SOON_DAYS = 5
+_ALERT_DEBOUNCE_HOURS = 24
 
 
 def check_heartbeat(settings: Settings, notifier: Notifier) -> bool:
@@ -44,6 +49,55 @@ def check_heartbeat(settings: Settings, notifier: Notifier) -> bool:
         )
         return False
     return True
+
+
+def check_holdings_news(settings: Settings, notifier: Notifier) -> int:
+    """Alert (debounced) when a held position has material negative news or earnings soon.
+
+    Returns the number of alerts sent. This is the proactive monitoring loop: you get
+    pinged about *your* holdings without watching the dashboard.
+    """
+    news_provider = get_news_provider(settings)
+    analyzer = get_sentiment_analyzer(settings)
+    earnings_provider = get_earnings_provider(settings)
+    sent = 0
+
+    with Storage(settings.db_path) as storage:
+        holdings = [p for p in storage.list_positions() if p["status"] == "open"]
+        for position in holdings:
+            ticker = position["ticker"]
+            try:
+                report = analyze_ticker(
+                    ticker, news_provider, analyzer, settings.news_lookback_days
+                )
+                if (
+                    report.count
+                    and report.score < settings.sentiment_negative_threshold
+                    and not storage.recent_alert(ticker, "negative_news", _ALERT_DEBOUNCE_HOURS)
+                ):
+                    top = report.items[0].headline if report.items else ""
+                    notifier.send(
+                        f"⚠️ {ticker}: negative news",
+                        f"Sentiment {report.score:+.2f}. {top}\nConsider reviewing this holding.",
+                    )
+                    storage.record_alert(ticker, "negative_news", f"{report.score:+.2f}")
+                    sent += 1
+
+                days = days_until_earnings(earnings_provider, ticker)
+                if (
+                    days is not None
+                    and 0 <= days <= _EARNINGS_SOON_DAYS
+                    and not storage.recent_alert(ticker, "earnings_soon", _ALERT_DEBOUNCE_HOURS)
+                ):
+                    notifier.send(
+                        f"📅 {ticker}: earnings in {days}d",
+                        "Expect volatility around the report.",
+                    )
+                    storage.record_alert(ticker, "earnings_soon", f"{days}d")
+                    sent += 1
+            except Exception:  # noqa: BLE001 — one holding must not break the loop
+                logger.exception("holdings news check failed for %s", ticker)
+    return sent
 
 
 def _safe(fn, *args) -> None:
@@ -79,6 +133,13 @@ def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler
         id="heartbeat",
         replace_existing=True,
     )
+    scheduler.add_job(
+        lambda: _safe(check_holdings_news, settings, notifier),
+        "interval",
+        hours=1,
+        id="holdings_news",
+        replace_existing=True,
+    )
     return scheduler
 
 
@@ -89,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
     scheduler = build_scheduler(settings, notifier)
     print(
         f"Scheduler started — universe scan daily @ {settings.scan_hour}:00, "
-        f"watchlist hourly, heartbeat hourly (notifier: {notifier.name}). Ctrl-C to stop."
+        f"watchlist hourly, heartbeat + holdings-news hourly (notifier: {notifier.name}). "
+        "Ctrl-C to stop."
     )
     try:
         scheduler.start()

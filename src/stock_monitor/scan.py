@@ -13,6 +13,7 @@ import datetime as dt
 
 import pandas as pd
 
+from stock_monitor.earnings import EarningsProvider, days_until_earnings
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
 from stock_monitor.models.scorer import Scoreable, recommendation_band, score_row
@@ -30,6 +31,7 @@ def _score_one(
     fundamental_provider: FundamentalProvider,
     start: dt.date,
     end: dt.date,
+    earnings_provider: EarningsProvider | None = None,
 ) -> dict | None:
     prices = price_provider.get_prices(ticker, start, end)
     if prices.empty:
@@ -46,7 +48,12 @@ def _score_one(
 
     result = score_row(model, row)
     price = float(prices["close"].iloc[-1])
-    capped, caps = apply_risk_caps(result.conviction, row, price)
+    days = (
+        days_until_earnings(earnings_provider, ticker, end)
+        if earnings_provider is not None
+        else None
+    )
+    capped, caps = apply_risk_caps(result.conviction, row, price, days)
     flags = risk_flags(row) + caps
     return {
         "ticker": ticker,
@@ -67,6 +74,7 @@ def run_scan(
     fundamental_provider: FundamentalProvider,
     storage: Storage | None = None,
     today: dt.date | None = None,
+    earnings_provider: EarningsProvider | None = None,
 ) -> list[dict]:
     """Score and rank the universe; persist the ranking if storage is provided."""
     end = today or dt.date.today()
@@ -76,7 +84,8 @@ def run_scan(
     for ticker in universe:
         try:
             scored = _score_one(
-                ticker, model, price_provider, fundamental_provider, start, end
+                ticker, model, price_provider, fundamental_provider, start, end,
+                earnings_provider,
             )
         except Exception:  # noqa: BLE001 — one bad ticker must not sink the scan
             scored = None
@@ -128,6 +137,7 @@ def scan_job(
     ``settings``. Scoring runs without a DB lock; only the brief save/heartbeat write
     holds the DuckDB file, so a running API isn't blocked.
     """
+    from stock_monitor.earnings import get_earnings_provider
     from stock_monitor.models.registry import compute_model_version, load_model
     from stock_monitor.notify import get_notifier
     from stock_monitor.providers.edgar_provider import EdgarProvider
@@ -153,6 +163,7 @@ def scan_job(
         price_provider,
         fundamental_provider,
         storage=None,
+        earnings_provider=get_earnings_provider(settings),  # type: ignore[arg-type]
     )
 
     entrants: list[dict] = []

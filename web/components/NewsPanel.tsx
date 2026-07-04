@@ -20,7 +20,14 @@ export function NewsPanel({ news }: { news: NewsResponse }) {
       <div className="card-top">
         <p className="ticker">News &amp; sentiment</p>
         <div className="score-block">
-          <span className="rec" style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}>
+          <span
+            className="rec"
+            style={{
+              color,
+              background: `${color}22`,
+              border: `1px solid ${color}55`,
+            }}
+          >
             {news.label} ({news.score >= 0 ? "+" : ""}
             {news.score.toFixed(2)})
           </span>
@@ -39,7 +46,10 @@ export function NewsPanel({ news }: { news: NewsResponse }) {
               target="_blank"
               rel="noreferrer"
             >
-              <span className="newsdot" style={{ background: sentColor(it.sentiment) }} />
+              <span
+                className="newsdot"
+                style={{ background: sentColor(it.sentiment) }}
+              />
               <span className="newshead">{it.headline}</span>
               <span className="newssrc">{it.source}</span>
             </a>
@@ -47,8 +57,9 @@ export function NewsPanel({ news }: { news: NewsResponse }) {
         </div>
       )}
       <p className="disclaimer">
-        Live news sentiment ({news.backend}). Informational overlay + exit trigger —
-        not part of the trained score (no historical news to learn from).
+        Live news sentiment ({news.backend}). Informational overlay + exit
+        trigger — not part of the trained score (no historical news to learn
+        from).
       </p>
     </div>
   );

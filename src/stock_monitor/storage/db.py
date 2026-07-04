@@ -101,6 +101,13 @@ CREATE TABLE IF NOT EXISTS positions (
     sold_at TIMESTAMP,
     sold_price DOUBLE
 );
+
+CREATE TABLE IF NOT EXISTS alerts (
+    ticker VARCHAR,
+    kind VARCHAR,
+    detail VARCHAR,
+    sent_at TIMESTAMP DEFAULT now()
+);
 """
 
 
@@ -214,10 +221,28 @@ class Storage:
 
     def count(self, table: str) -> int:
         """Return the row count of one of the known tables."""
-        if table not in {"features", "scores", "quarantine", "opportunities", "runs", "positions"}:
+        if table not in {
+            "features", "scores", "quarantine", "opportunities", "runs", "positions", "alerts"
+        }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
         return int(result[0]) if result else 0
+
+    def record_alert(self, ticker: str, kind: str, detail: str) -> None:
+        """Log that an alert was sent (for debouncing)."""
+        self._con.execute(
+            "INSERT INTO alerts (ticker, kind, detail, sent_at) VALUES (?, ?, ?, now())",
+            [ticker, kind, detail],
+        )
+
+    def recent_alert(self, ticker: str, kind: str, within_hours: int) -> bool:
+        """Return True if an alert of this kind for this ticker was sent recently."""
+        row = self._con.execute(
+            "SELECT count(*) FROM alerts WHERE ticker = ? AND kind = ? "
+            "AND sent_at >= now() - (? * INTERVAL '1 hour')",
+            [ticker, kind, within_hours],
+        ).fetchone()
+        return bool(row and row[0] > 0)
 
     def add_position(
         self,

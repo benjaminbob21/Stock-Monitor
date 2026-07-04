@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 
 from stock_monitor import __version__
 from stock_monitor.config import get_settings
+from stock_monitor.earnings import EarningsProvider, get_earnings_provider
 from stock_monitor.models.registry import compute_model_version, load_model
 from stock_monitor.models.scorer import Scoreable
 from stock_monitor.positions import (
@@ -58,6 +59,7 @@ class AppState:
     analyzer: SentimentAnalyzer | None = None
     news_lookback_days: int = 7
     sentiment_negative_threshold: float = -0.25
+    earnings_provider: EarningsProvider | None = None
 
 
 _state: AppState | None = None
@@ -80,6 +82,7 @@ def build_state() -> AppState:
         analyzer=get_sentiment_analyzer(settings),
         news_lookback_days=settings.news_lookback_days,
         sentiment_negative_threshold=settings.sentiment_negative_threshold,
+        earnings_provider=get_earnings_provider(settings),
     )
 
 
@@ -130,6 +133,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                     label_window_months=state.label_window_months,
                     storage=store,
                     short_model=state.model_short,
+                    earnings_provider=state.earnings_provider,
                 )
         return score_ticker(
             ticker,
@@ -140,6 +144,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
             label_window_months=state.label_window_months,
             storage=None,
             short_model=state.model_short,
+            earnings_provider=state.earnings_provider,
         )
     except TickerDataUnavailable as exc:
         raise HTTPException(status_code=404, detail=f"no price data for {ticker.upper()}") from exc

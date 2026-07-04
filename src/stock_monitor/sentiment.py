@@ -201,14 +201,18 @@ class FinBertAnalyzer(SentimentAnalyzer):
     name = "finbert"
 
     def __init__(self) -> None:
+        from typing import Any
+
         from transformers import pipeline
 
-        self._pipe = pipeline("sentiment-analysis", model="ProsusAI/finbert")
+        self._pipe: Any = pipeline(
+            "text-classification", model="ProsusAI/finbert"
+        )
 
     def score(self, text: str) -> float:
-        result = self._pipe(text[:512])[0]
-        label = result["label"].lower()
-        confidence = float(result["score"])
+        item = self._pipe(text[:512])[0]
+        label = str(item["label"]).lower()
+        confidence = float(item["score"])
         if label == "positive":
             return confidence
         if label == "negative":

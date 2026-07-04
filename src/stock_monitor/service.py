@@ -46,6 +46,8 @@ _EXTREME_VOL = 0.80
 _PENNY_CAP = 15
 _EXTREME_VOL_CAP = 40
 _NO_FUNDAMENTALS_CAP = 50
+_EARNINGS_SOON_DAYS = 5
+_EARNINGS_SOON_CAP = 55
 
 
 class TickerDataUnavailable(Exception):
@@ -79,7 +81,10 @@ def risk_flags(row: dict[str, object]) -> list[str]:
 
 
 def apply_risk_caps(
-    conviction: int, row: dict[str, object], price: float | None
+    conviction: int,
+    row: dict[str, object],
+    price: float | None,
+    days_to_earnings: int | None = None,
 ) -> tuple[int, list[str]]:
     """Ceiling the conviction when a hard risk flag fires (build-plan §7 Phase 3).
 
@@ -102,6 +107,10 @@ def apply_risk_caps(
         capped = min(capped, _NO_FUNDAMENTALS_CAP)
         caps.append("no_fundamentals_cap")
 
+    if days_to_earnings is not None and 0 <= days_to_earnings <= _EARNINGS_SOON_DAYS:
+        capped = min(capped, _EARNINGS_SOON_CAP)
+        caps.append("earnings_soon_cap")
+
     return capped, caps
 
 
@@ -116,6 +125,7 @@ def score_ticker(
     storage: Storage | None = None,
     today: dt.date | None = None,
     short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> dict[str, object]:
     """Score a single ticker on demand and return a JSON-ready payload."""
     ticker = ticker.upper()
@@ -143,7 +153,8 @@ def score_ticker(
     # Apply the same hard risk caps the scan uses, so the on-demand card and the
     # ranked list always agree for a given ticker.
     price = float(prices["close"].iloc[-1])
-    capped, caps = apply_risk_caps(result.conviction, row, price)
+    days_to_earnings = _days_to_earnings(earnings_provider, ticker, end)
+    capped, caps = apply_risk_caps(result.conviction, row, price, days_to_earnings)
     flags = risk_flags(row) + caps
     recommendation = recommendation_band(capped)
     drivers = [
@@ -157,7 +168,7 @@ def score_ticker(
     recommendation_3m: str | None = None
     if short_model is not None:
         raw_3m = predict_conviction(short_model, row)
-        conviction_3m, _ = apply_risk_caps(raw_3m, row, price)
+        conviction_3m, _ = apply_risk_caps(raw_3m, row, price, days_to_earnings)
         recommendation_3m = recommendation_band(conviction_3m)
 
     if storage is not None:
@@ -185,12 +196,26 @@ def score_ticker(
         "fundamentals_known_on": known_on_date.isoformat() if known_on_date else None,
         "drivers": drivers,
         "risk_flags": flags,
+        "days_to_earnings": days_to_earnings,
         # Near-term (3-month) read alongside the 12-month conviction, when available.
         "conviction_3m": conviction_3m,
         "recommendation_3m": recommendation_3m,
         "disclaimer": _GUARDRAIL
         + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
     }
+
+
+def _days_to_earnings(provider: object | None, ticker: str, today: dt.date) -> int | None:
+    if provider is None:
+        return None
+    from stock_monitor.earnings import EarningsProvider, days_until_earnings
+
+    if not isinstance(provider, EarningsProvider):
+        return None
+    try:
+        return days_until_earnings(provider, ticker, today)
+    except Exception:  # noqa: BLE001 — earnings is optional; never break scoring
+        return None
 
 
 def _as_float(value: object) -> float:

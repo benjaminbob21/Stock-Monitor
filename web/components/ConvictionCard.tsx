@@ -29,7 +29,11 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           </div>
           <span
             className="rec"
-            style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}
+            style={{
+              color,
+              background: `${color}22`,
+              border: `1px solid ${color}55`,
+            }}
           >
             {data.recommendation}
           </span>
@@ -46,6 +50,19 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
             {data.recommendation_3m}
           </span>
         </div>
+      )}
+
+      {data.days_to_earnings !== null && data.days_to_earnings !== undefined && (
+        <p
+          className="earnings"
+          style={{
+            color: data.days_to_earnings <= 5 ? "var(--orange)" : "var(--muted)",
+          }}
+        >
+          📅 Earnings in {data.days_to_earnings} day
+          {data.days_to_earnings === 1 ? "" : "s"}
+          {data.days_to_earnings <= 5 ? " — expect volatility (score capped)" : ""}
+        </p>
       )}
 
       <p className="section-label">Top drivers (SHAP)</p>
@@ -81,7 +98,8 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           {data.fundamentals_known_on ?? "n/a (no PIT fundamentals)"}
         </span>
         <span>
-          {data.calibrated ? "calibrated" : "uncalibrated"} · {data.model_version}
+          {data.calibrated ? "calibrated" : "uncalibrated"} ·{" "}
+          {data.model_version}
         </span>
       </div>
 

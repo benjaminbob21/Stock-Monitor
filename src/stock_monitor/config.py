@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # HTTP cache TTL in seconds (politeness + free-tier rate-limit safety).
     http_cache_ttl: int = 86_400
 
+    # Local analytical store (DuckDB). Gitignored; parent dir is created on demand.
+    db_path: str = "data/stock_monitor.duckdb"
+
+    # Where the trained model is persisted for the API to load.
+    model_path: str = "models/latest.joblib"
+
+    # MLflow tracking (local file store; gitignored).
+    mlflow_tracking_uri: str = "file:./mlruns"
+    mlflow_experiment: str = "stock-monitor"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -30,7 +30,15 @@ DEFAULT_CONCEPTS: tuple[str, ...] = (
     "Liabilities",
     "Revenues",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
+    # Valuation inputs (market cap + free cash flow).
+    "NetCashProvidedByUsedInOperatingActivities",
+    "PaymentsToAcquirePropertyPlantAndEquipment",
+    "CommonStockSharesOutstanding",
 )
+
+# Shares outstanding is also commonly filed under the dei taxonomy; we normalise it
+# to the us-gaap concept name so the feature builder can look it up uniformly.
+_DEI_SHARES_CONCEPT = "EntityCommonStockSharesOutstanding"
 
 
 class EdgarProvider(FundamentalProvider):
@@ -63,8 +71,9 @@ class EdgarProvider(FundamentalProvider):
         return self._load_ticker_map().get(ticker.upper())
 
     def get_fundamentals(
-        self, ticker: str, concepts: Sequence[str] = DEFAULT_CONCEPTS
+        self, ticker: str, concepts: Sequence[str] | None = None
     ) -> list[FundamentalFact]:
+        concepts = concepts or DEFAULT_CONCEPTS
         cik = self._cik_for(ticker)
         if cik is None:
             return []
@@ -74,13 +83,12 @@ class EdgarProvider(FundamentalProvider):
             return []
         resp.raise_for_status()
 
-        us_gaap = resp.json().get("facts", {}).get("us-gaap", {})
+        all_facts = resp.json().get("facts", {})
+        us_gaap = all_facts.get("us-gaap", {})
         wanted = set(concepts)
         facts: list[FundamentalFact] = []
 
-        for concept, payload in us_gaap.items():
-            if concept not in wanted:
-                continue
+        def _emit(concept: str, payload: dict) -> None:
             for unit, entries in payload.get("units", {}).items():
                 for entry in entries:
                     end = entry.get("end")
@@ -99,4 +107,15 @@ class EdgarProvider(FundamentalProvider):
                             form=entry.get("form", ""),
                         )
                     )
+
+        for concept, payload in us_gaap.items():
+            if concept in wanted:
+                _emit(concept, payload)
+
+        # Shares outstanding is often only in the dei taxonomy; normalise its name.
+        if "CommonStockSharesOutstanding" in wanted:
+            dei = all_facts.get("dei", {})
+            if _DEI_SHARES_CONCEPT in dei:
+                _emit("CommonStockSharesOutstanding", dei[_DEI_SHARES_CONCEPT])
+
         return facts

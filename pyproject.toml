@@ -11,23 +11,29 @@ requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
     "numpy",
-    "pandas",
+    "pandas<3",
     "scikit-learn",
     "lightgbm",
     "shap",
+    "pandas-ta>=0.4.71b0",
     "yfinance",
     "requests",
     "requests-cache",
     "pydantic",
     "pydantic-settings",
     "pandera",
+    "duckdb",
+    "mlflow",
+    "fastapi",
+    "uvicorn[standard]",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy"]
+dev = ["pytest", "ruff", "mypy", "httpx"]
 
 [project.scripts]
 stock-monitor = "stock_monitor.cli:main"
+stock-monitor-train = "stock_monitor.pipeline:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

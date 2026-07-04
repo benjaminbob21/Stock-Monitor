@@ -35,12 +35,12 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Status
 
-🚧 Early development. **Phase 0 is built** — a CLI that pulls a watchlist, builds point-in-time-correct feature rows (fundamentals + momentum), trains a LightGBM on a "beat the S&P over 12 months" label, and prints an explainable conviction score with its top-3 SHAP drivers. Next: Phase 1 (feature pipeline + storage + minimal UI).
+🚧 Early development. **Phase 0 built** (explainable CLI) and **Phase 1 complete**: a multi-factor PIT feature builder (momentum, volatility, RSI/trend technicals, quality, valuation, sentiment placeholder), a data-quality gate (Pandera), a DuckDB store, a training pipeline with MLflow logging + model persistence, a FastAPI `/score/{ticker}` endpoint, and a Next.js dashboard (search box → conviction card with score, SHAP drivers, and risk flags). Next: Phase 2 (walk-forward validation + confidence calibration + backtesting).
 
 ### Roadmap
 
 - **Phase 0** — CLI: watchlist → basic ML score → print.
-- **Phase 1** — Feature pipeline + gradient-boosting model + SQLite + Next.js dashboard (on-demand lookups).
+- **Phase 1** — Feature pipeline + gradient-boosting model + DuckDB + FastAPI + Next.js dashboard (on-demand lookups).
 - **Phase 2** — Backtesting + walk-forward validation + confidence calibration.
 - **Phase 3** — Full-universe daily scan + ranked opportunities + Telegram alerts + risk flags + earnings calendar.
 - **Phase 4** — **Position tracking + exit/sell recommendations** (monitor holdings, news-driven sell signals) + FinBERT news-sentiment pillar; containerize → kind → Prometheus/Grafana.
@@ -48,7 +48,7 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Setup
 
-Requires Python 3.11+ (developed on 3.12). On macOS, LightGBM needs the OpenMP runtime.
+Requires Python 3.11+ (developed on 3.12) and Node 18+ for the web app. On macOS, LightGBM needs the OpenMP runtime.
 
 ```bash
 # macOS: LightGBM's OpenMP dependency
@@ -67,7 +67,17 @@ stock-monitor --watchlist AAPL MSFT NVDA KO
 ruff check src tests && mypy src && pytest
 ```
 
+Train a model, serve the API, and run the dashboard (Phase 1):
+
+```bash
+stock-monitor-train --watchlist AAPL MSFT NVDA KO   # ingest → validate → store → train → MLflow
+uvicorn stock_monitor.api.app:app --port 8137       # FastAPI: GET /score/{ticker}
+
+cd web && npm install && npm run dev                # Next.js dashboard on http://localhost:3000
+```
+
 Secrets/API keys live only in the local `.env` (never committed).
+
 
 ## Disclaimer
 

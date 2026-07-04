@@ -1,0 +1,172 @@
+"""Training pipeline: ingest -> validate -> store -> train -> MLflow -> persist.
+
+Run with ``stock-monitor-train``. This is the batch job that produces the model the
+API serves. Every run is logged to MLflow (params, metrics, quarantine rate) and the
+fitted model is persisted so ``GET /score/{ticker}`` can load it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import os
+from dataclasses import dataclass
+
+import mlflow
+import pandas as pd
+
+from stock_monitor.config import Settings, get_settings
+from stock_monitor.features.builder import FEATURE_COLUMNS, build_training_frame
+from stock_monitor.features.schema import ValidationReport, validate_features
+from stock_monitor.models.registry import compute_model_version, save_model
+from stock_monitor.models.scorer import train_model
+from stock_monitor.providers.base import FundamentalProvider, PriceProvider
+from stock_monitor.providers.edgar_provider import EdgarProvider
+from stock_monitor.providers.yfinance_provider import YFinanceProvider
+from stock_monitor.storage.db import Storage
+
+DEFAULT_WATCHLIST: tuple[str, ...] = ("AAPL", "MSFT", "NVDA", "JPM", "XOM", "KO")
+BENCHMARK = "SPY"
+HISTORY_YEARS = 8
+
+
+@dataclass(frozen=True)
+class TrainingResult:
+    model_version: str
+    rows_trained: int
+    positive_rate: float
+    train_accuracy: float
+    report: ValidationReport
+    model_path: str
+
+
+def _assemble_frame(
+    watchlist: list[str],
+    price_provider: PriceProvider,
+    fundamental_provider: FundamentalProvider,
+    label_window_months: int,
+) -> pd.DataFrame:
+    end = dt.date.today()
+    start = end - dt.timedelta(days=365 * HISTORY_YEARS)
+
+    benchmark = price_provider.get_prices(BENCHMARK, start, end)
+    if benchmark.empty:
+        raise RuntimeError(f"benchmark {BENCHMARK} price history unavailable")
+
+    frames: list[pd.DataFrame] = []
+    for ticker in watchlist:
+        prices = price_provider.get_prices(ticker, start, end)
+        if prices.empty:
+            continue
+        facts = fundamental_provider.get_fundamentals(ticker)
+        frame = build_training_frame(
+            ticker, prices, facts, benchmark, label_window_months
+        )
+        if not frame.empty:
+            frames.append(frame)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _log_mlflow(
+    frame: pd.DataFrame,
+    report: ValidationReport,
+    version: str,
+    accuracy: float,
+    settings: Settings,
+    params: dict,
+) -> None:
+    # MLflow 3.x gates the local file store behind an opt-in; mlruns/ is gitignored
+    # and the right weight for a solo project (build-plan §4).
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment(settings.mlflow_experiment)
+    with mlflow.start_run():
+        mlflow.set_tag("model_version", version)
+        mlflow.log_params(params)
+        mlflow.log_param("label_window_months", settings.label_window_months)
+        mlflow.log_param("features", ",".join(FEATURE_COLUMNS))
+        mlflow.log_metrics(
+            {
+                "rows_trained": float(len(frame)),
+                "positive_rate": float(frame["label"].mean()),
+                "quarantine_rate": report.quarantine_rate,
+                "train_accuracy": accuracy,
+            }
+        )
+        mlflow.log_artifact(settings.model_path)
+
+
+def run_training(
+    watchlist: list[str],
+    settings: Settings | None = None,
+    price_provider: PriceProvider | None = None,
+    fundamental_provider: FundamentalProvider | None = None,
+    log_mlflow: bool = True,
+) -> TrainingResult:
+    """Run the full pipeline and return a summary. Providers are injectable for tests."""
+    settings = settings or get_settings()
+    price_provider = price_provider or YFinanceProvider()
+    fundamental_provider = fundamental_provider or EdgarProvider()
+
+    pooled = _assemble_frame(
+        watchlist, price_provider, fundamental_provider, settings.label_window_months
+    )
+    if pooled.empty:
+        raise RuntimeError("no labelled training data could be assembled")
+
+    valid, quarantined, report = validate_features(pooled)
+
+    with Storage(settings.db_path) as store:
+        store.upsert_features(valid)
+        store.record_quarantine(quarantined)
+
+    model = train_model(valid)
+    version = compute_model_version(model)
+    save_model(model, settings.model_path)
+
+    x = valid[list(FEATURE_COLUMNS)]
+    accuracy = float((model.predict(x) == valid["label"].astype(int)).mean())
+
+    if log_mlflow:
+        _log_mlflow(valid, report, version, accuracy, settings, model.get_params())
+
+    return TrainingResult(
+        model_version=version,
+        rows_trained=len(valid),
+        positive_rate=float(valid["label"].mean()),
+        train_accuracy=accuracy,
+        report=report,
+        model_path=settings.model_path,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Stock-Monitor training pipeline")
+    parser.add_argument(
+        "-w", "--watchlist", nargs="+", default=list(DEFAULT_WATCHLIST),
+        help="Tickers to train on.",
+    )
+    parser.add_argument(
+        "--no-mlflow", action="store_true", help="Skip MLflow logging."
+    )
+    args = parser.parse_args(argv)
+
+    result = run_training(
+        [t.upper() for t in args.watchlist], log_mlflow=not args.no_mlflow
+    )
+    print(
+        f"Trained {result.model_version} on {result.rows_trained} rows "
+        f"(positive_rate={result.positive_rate:.2f}, "
+        f"in-sample_acc={result.train_accuracy:.2f}, "
+        f"quarantined={result.report.quarantined}/{result.report.total}).\n"
+        f"Model saved to {result.model_path}. In-sample accuracy is NOT validation "
+        f"— walk-forward + calibration are Phase 2."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

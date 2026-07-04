@@ -5,13 +5,15 @@ date: prices up to ``as_of`` and fundamentals whose ``known_on`` (filing) date i
 on or before ``as_of``. The ``fundamentals_known_on`` field records the freshest
 filing date actually used, so any row is auditable for look-ahead bias.
 
-Phase 0 feature set (a few fundamentals + momentum, per build-plan §7):
-- ``mom_12_1`` : 12-month-ago -> 1-month-ago price return (classic momentum factor).
-- ``mom_6_1``  : 6-month-ago -> 1-month-ago price return.
-- ``vol_3m``   : annualised volatility of daily returns over ~3 months.
-- ``roe``      : NetIncomeLoss / StockholdersEquity (quality).
-- ``debt_ratio``: Liabilities / Assets (balance-sheet risk).
-- ``profit_margin``: NetIncomeLoss / Revenues (quality).
+Phase 1 feature set — a multi-factor row spanning several pillars (build-plan §2):
+- momentum : ``mom_12_1`` (12m-ago -> 1m-ago), ``mom_6_1`` (6m-ago -> 1m-ago).
+- volatility: ``vol_3m`` (annualised std of daily returns over ~3 months).
+- technicals: ``rsi_14`` (Wilder RSI), ``trend_200`` (price vs 200-day SMA).
+- quality  : ``roe`` (NI/equity), ``debt_ratio`` (liabilities/assets),
+             ``profit_margin`` (NI/revenues).
+- valuation: ``earnings_yield`` (NI/market cap), ``fcf_yield`` (FCF/market cap).
+- sentiment: ``sentiment`` — a neutral placeholder reserving the pillar for the
+             Phase 4 FinBERT news signal (0.0 until then).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
+import pandas_ta as ta
 
 from stock_monitor.providers.base import FundamentalFact
 
@@ -29,9 +32,14 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "mom_12_1",
     "mom_6_1",
     "vol_3m",
+    "rsi_14",
+    "trend_200",
     "roe",
     "debt_ratio",
     "profit_margin",
+    "earnings_yield",
+    "fcf_yield",
+    "sentiment",
 )
 
 # Trading-day offsets (~21 sessions per month).
@@ -39,6 +47,8 @@ _LOOKBACK_1M = 21
 _LOOKBACK_6M = 126
 _LOOKBACK_12M = 252
 _VOL_WINDOW = 63
+_RSI_WINDOW = 14
+_SMA_WINDOW = 200
 
 # Revenue may be reported under either concept; prefer the general one.
 _REVENUE_CONCEPTS = ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax")
@@ -113,17 +123,33 @@ def build_feature_row(
     p_1m = float(close.iloc[-_LOOKBACK_1M])
     p_6m = float(close.iloc[-_LOOKBACK_6M])
     p_12m = float(close.iloc[-_LOOKBACK_12M])
+    p_last = float(close.iloc[-1])
 
     daily_returns = close.iloc[-_VOL_WINDOW:].pct_change().dropna()
     vol_3m = float(daily_returns.std() * math.sqrt(252)) if not daily_returns.empty else math.nan
+
+    rsi_series = ta.rsi(close, length=_RSI_WINDOW)
+    rsi_14 = (
+        float(rsi_series.iloc[-1])
+        if rsi_series is not None and not rsi_series.dropna().empty
+        else math.nan
+    )
+    sma_200 = float(close.iloc[-_SMA_WINDOW:].mean())
+    trend_200 = p_last / sma_200 - 1.0 if sma_200 else math.nan
 
     net_income, k1 = _latest_value(facts, "NetIncomeLoss", as_of)
     equity, k2 = _latest_value(facts, "StockholdersEquity", as_of)
     assets, k3 = _latest_value(facts, "Assets", as_of)
     liabilities, k4 = _latest_value(facts, "Liabilities", as_of)
     revenues, k5 = _revenue(facts, as_of)
+    ocf, k6 = _latest_value(facts, "NetCashProvidedByUsedInOperatingActivities", as_of)
+    capex, k7 = _latest_value(facts, "PaymentsToAcquirePropertyPlantAndEquipment", as_of)
+    shares, k8 = _latest_value(facts, "CommonStockSharesOutstanding", as_of)
 
-    known_dates = [k for k in (k1, k2, k3, k4, k5) if k is not None]
+    market_cap = p_last * shares if shares else None
+    free_cash_flow = ocf - capex if ocf is not None and capex is not None else None
+
+    known_dates = [k for k in (k1, k2, k3, k4, k5, k6, k7, k8) if k is not None]
     fundamentals_known_on = max(known_dates) if known_dates else None
 
     return {
@@ -133,9 +159,14 @@ def build_feature_row(
         "mom_12_1": p_1m / p_12m - 1.0,
         "mom_6_1": p_1m / p_6m - 1.0,
         "vol_3m": vol_3m,
+        "rsi_14": rsi_14,
+        "trend_200": trend_200,
         "roe": _safe_ratio(net_income, equity),
         "debt_ratio": _safe_ratio(liabilities, assets),
         "profit_margin": _safe_ratio(net_income, revenues),
+        "earnings_yield": _safe_ratio(net_income, market_cap),
+        "fcf_yield": _safe_ratio(free_cash_flow, market_cap),
+        "sentiment": 0.0,
     }
 
 

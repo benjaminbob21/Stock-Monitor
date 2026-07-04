@@ -68,7 +68,7 @@ class FundamentalProvider(ABC):
 
     @abstractmethod
     def get_fundamentals(
-        self, ticker: str, concepts: Sequence[str]
+        self, ticker: str, concepts: Sequence[str] | None = None
     ) -> list[FundamentalFact]:
         """Return every known-dated fact for ``ticker`` across ``concepts``."""
         raise NotImplementedError

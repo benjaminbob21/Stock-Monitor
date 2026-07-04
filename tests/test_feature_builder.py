@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 import numpy as np
 import pandas as pd
@@ -42,6 +43,9 @@ def _facts() -> list[FundamentalFact]:
         fact("Assets", 1000.0),
         fact("Liabilities", 400.0),
         fact("Revenues", 250.0),
+        fact("NetCashProvidedByUsedInOperatingActivities", 90.0),
+        fact("PaymentsToAcquirePropertyPlantAndEquipment", 20.0),
+        fact("CommonStockSharesOutstanding", 1000.0),
     ]
 
 
@@ -66,6 +70,13 @@ def test_build_feature_row_computes_expected_ratios() -> None:
     assert row["fundamentals_known_on"] == dt.date(2022, 2, 1)
     # Upward drift -> positive momentum.
     assert row["mom_12_1"] > 0
+    # Technicals: RSI is bounded; a rising series trends above its 200-day SMA.
+    assert 0.0 <= float(row["rsi_14"]) <= 100.0
+    assert float(row["trend_200"]) > 0
+    # Valuation present and finite; sentiment is the neutral placeholder.
+    assert math.isfinite(float(row["earnings_yield"]))
+    assert math.isfinite(float(row["fcf_yield"]))
+    assert row["sentiment"] == 0.0
 
 
 def test_training_frame_has_labels_and_features() -> None:

@@ -1,0 +1,102 @@
+"""SEC EDGAR fundamental provider — the point-in-time source of truth.
+
+EDGAR's ``companyfacts`` API returns structured XBRL financials where **every value
+carries the date it was filed** (``filed``). That filing date is our ``known_on``
+guarantee against look-ahead bias, which is why EDGAR — not a convenience API that
+serves restated figures — is the fundamentals backbone (build-plan §1, §3).
+
+SEC fair-access policy requires a descriptive ``User-Agent`` with contact info; set
+it via ``SEC_USER_AGENT`` in ``.env``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import date
+
+import requests_cache
+
+from stock_monitor.config import get_settings
+from stock_monitor.providers.base import FundamentalFact, FundamentalProvider
+
+_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+
+# A small, robust starter set mapped to quality/value factors (build-plan §2).
+DEFAULT_CONCEPTS: tuple[str, ...] = (
+    "NetIncomeLoss",
+    "StockholdersEquity",
+    "Assets",
+    "Liabilities",
+    "Revenues",
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+)
+
+
+class EdgarProvider(FundamentalProvider):
+    """Fetch point-in-time fundamentals from SEC EDGAR ``companyfacts``."""
+
+    name = "sec-edgar"
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        # Cached session respects SEC's servers and free-tier politeness.
+        self._session = requests_cache.CachedSession(
+            cache_name=".cache/edgar",
+            backend="sqlite",
+            expire_after=settings.http_cache_ttl,
+        )
+        self._session.headers.update({"User-Agent": settings.sec_user_agent})
+        self._ticker_to_cik: dict[str, int] | None = None
+
+    def _load_ticker_map(self) -> dict[str, int]:
+        if self._ticker_to_cik is None:
+            resp = self._session.get(_TICKERS_URL, timeout=30)
+            resp.raise_for_status()
+            self._ticker_to_cik = {
+                row["ticker"].upper(): int(row["cik_str"])
+                for row in resp.json().values()
+            }
+        return self._ticker_to_cik
+
+    def _cik_for(self, ticker: str) -> int | None:
+        return self._load_ticker_map().get(ticker.upper())
+
+    def get_fundamentals(
+        self, ticker: str, concepts: Sequence[str] = DEFAULT_CONCEPTS
+    ) -> list[FundamentalFact]:
+        cik = self._cik_for(ticker)
+        if cik is None:
+            return []
+
+        resp = self._session.get(_COMPANYFACTS_URL.format(cik=cik), timeout=30)
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+
+        us_gaap = resp.json().get("facts", {}).get("us-gaap", {})
+        wanted = set(concepts)
+        facts: list[FundamentalFact] = []
+
+        for concept, payload in us_gaap.items():
+            if concept not in wanted:
+                continue
+            for unit, entries in payload.get("units", {}).items():
+                for entry in entries:
+                    end = entry.get("end")
+                    filed = entry.get("filed")
+                    value = entry.get("val")
+                    if end is None or filed is None or value is None:
+                        continue
+                    facts.append(
+                        FundamentalFact(
+                            ticker=ticker.upper(),
+                            concept=concept,
+                            value=float(value),
+                            unit=unit,
+                            fiscal_end=date.fromisoformat(end),
+                            known_on=date.fromisoformat(filed),
+                            form=entry.get("form", ""),
+                        )
+                    )
+        return facts

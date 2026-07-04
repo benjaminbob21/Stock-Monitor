@@ -39,6 +39,10 @@ pnpm-debug.log*
 data/
 datasets/
 models/
+# ...but keep the source `models` package (only ignore ML artifact dirs above).
+!src/stock_monitor/models/
+!src/stock_monitor/models/**
+src/stock_monitor/models/__pycache__/
 *.parquet
 *.feather
 *.h5

@@ -31,8 +31,8 @@
 
 - ✅ Repo initialized (README, `.gitignore`).
 - ✅ Phase 0 **kicked off**; decided to build the engine before any infra.
-- ⚠️ **Nothing else built yet** — no `pyproject.toml`, no `src/`, no code. Start clean on Mac.
-- ⚠️ A local `.venv/` may exist from the Windows attempt — it's **gitignored** (won't be cloned). On Mac, create a fresh venv as above.
+- ✅ **Phase 0 built on Mac (2026-07-03).** `pyproject.toml`, `src/stock_monitor/*`, `tests/*` all in place; ruff + mypy + pytest green; CLI runs end-to-end (see below).
+- ℹ️ `.venv/` is created fresh on Mac with **Python 3.12** (`brew install python@3.12`) and is gitignored. macOS LightGBM also needs `brew install libomp`.
 
 ## Why we switched machines (the blocker — for the record)
 
@@ -45,13 +45,27 @@
 
 From `build-plan.md` §7. Keep the guardrails: human-in-the-loop, no auto-trading, confidence = confluence + proof + transparency.
 
-- [ ] `pyproject.toml` + deps; wire `ruff` + `mypy` + `pytest`.
-- [ ] `.env.example`; load config via `pydantic-settings` (secrets in gitignored `.env`).
-- [ ] **Provider interface** (abstract `DataProvider`) + first impls: yfinance (prices) + SEC EDGAR (fundamentals).
-- [ ] Pull a hardcoded watchlist → assemble a basic feature row (a few fundamentals + 12-1 momentum).
-- [ ] Train a quick **LightGBM** on a small labeled sample → CLI prints a conviction score + **top-3 SHAP drivers** per ticker.
-- [ ] **Design point-in-time correctness now:** store the "known-on" (filing) date with every fundamental — the #1 anti-look-ahead-bias rule.
-- [ ] Lock the **forward-return label window = 12 months** (long-term, cleaner signal).
+- [x] `pyproject.toml` + deps; wire `ruff` + `mypy` + `pytest`.
+- [x] `.env.example`; load config via `pydantic-settings` (secrets in gitignored `.env`).
+- [x] **Provider interface** (abstract `DataProvider`) + first impls: yfinance (prices) + SEC EDGAR (fundamentals).
+- [x] Pull a hardcoded watchlist → assemble a basic feature row (a few fundamentals + 12-1 momentum).
+- [x] Train a quick **LightGBM** on a small labeled sample → CLI prints a conviction score + **top-3 SHAP drivers** per ticker.
+- [x] **Design point-in-time correctness now:** store the "known-on" (filing) date with every fundamental — the #1 anti-look-ahead-bias rule.
+- [x] Lock the **forward-return label window = 12 months** (long-term, cleaner signal).
+
+### Run it
+
+```bash
+cd Stock-Monitor
+source .venv/bin/activate            # Python 3.12 venv
+cp .env.example .env                 # set SEC_USER_AGENT (name + contact email)
+stock-monitor --watchlist AAPL MSFT NVDA KO
+ruff check src tests && mypy src && pytest   # quality gates
+```
+
+### Next: Phase 1 (from build-plan §7)
+
+Feature pipeline + Pandera validation at ingestion + SQLite/DuckDB store + MLflow run logging + FastAPI `/score/{ticker}` + Next.js lookup card. Calibration/walk-forward remain Phase 2 — Phase 0 conviction is intentionally uncalibrated.
 
 ## Suggested first structure (build on Mac)
 

@@ -35,7 +35,7 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Status
 
-🚧 Early development — see the roadmap. Currently bootstrapping **Phase 0** (CLI: pull a watchlist, print an explainable ML score).
+🚧 Early development. **Phase 0 is built** — a CLI that pulls a watchlist, builds point-in-time-correct feature rows (fundamentals + momentum), trains a LightGBM on a "beat the S&P over 12 months" label, and prints an explainable conviction score with its top-3 SHAP drivers. Next: Phase 1 (feature pipeline + storage + minimal UI).
 
 ### Roadmap
 
@@ -48,7 +48,26 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Setup
 
-_TBD — populated as Phase 0 lands. Secrets/API keys go in a local `.env` (never committed)._
+Requires Python 3.11+ (developed on 3.12). On macOS, LightGBM needs the OpenMP runtime.
+
+```bash
+# macOS: LightGBM's OpenMP dependency
+brew install libomp
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+cp .env.example .env   # then set SEC_USER_AGENT to "YourApp/0.1 (your-email)"
+```
+
+Run the Phase 0 CLI and the quality gates:
+
+```bash
+stock-monitor --watchlist AAPL MSFT NVDA KO
+ruff check src tests && mypy src && pytest
+```
+
+Secrets/API keys live only in the local `.env` (never committed).
 
 ## Disclaimer
 

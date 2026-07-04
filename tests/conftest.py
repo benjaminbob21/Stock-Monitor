@@ -106,3 +106,38 @@ def world() -> SimpleNamespace:
         price_provider=FakePriceProvider({ticker: prices, "SPY": benchmark}),
         fundamental_provider=FakeFundamentalProvider({ticker: facts}),
     )
+
+
+@pytest.fixture
+def pooled_frame() -> pd.DataFrame:
+    """A labelled multi-ticker frame with enough history for walk-forward folds."""
+    benchmark = random_walk(seed=99, drift=0.0003)
+    frames = []
+    for i, seed in enumerate((1, 2, 3)):
+        prices = random_walk(seed=seed, drift=0.0004 + 0.0001 * i)
+        frame = build_training_frame(
+            f"T{i}", prices, make_facts(f"T{i}"), benchmark, label_window_months=12
+        )
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
+@pytest.fixture
+def backtest_world() -> SimpleNamespace:
+    """A pooled frame plus the per-ticker price frames a backtest needs."""
+    benchmark = random_walk(seed=99, drift=0.0003)
+    price_frames: dict[str, pd.DataFrame] = {}
+    frames = []
+    for i, seed in enumerate((1, 2, 3)):
+        prices = random_walk(seed=seed, drift=0.0004 + 0.0001 * i)
+        price_frames[f"T{i}"] = prices
+        frames.append(
+            build_training_frame(
+                f"T{i}", prices, make_facts(f"T{i}"), benchmark, label_window_months=12
+            )
+        )
+    return SimpleNamespace(
+        frame=pd.concat(frames, ignore_index=True),
+        price_frames=price_frames,
+        benchmark=benchmark,
+    )

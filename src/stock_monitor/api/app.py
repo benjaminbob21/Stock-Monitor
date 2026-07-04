@@ -13,12 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated
 
-import lightgbm as lgb
 from fastapi import Depends, FastAPI, HTTPException
 
 from stock_monitor import __version__
 from stock_monitor.config import get_settings
 from stock_monitor.models.registry import compute_model_version, load_model
+from stock_monitor.models.scorer import Scoreable
 from stock_monitor.providers.edgar_provider import EdgarProvider
 from stock_monitor.providers.yfinance_provider import YFinanceProvider
 from stock_monitor.service import (
@@ -34,7 +34,7 @@ from stock_monitor.storage.db import Storage
 class AppState:
     """Injected runtime state for the API."""
 
-    model: lgb.LGBMClassifier | None
+    model: Scoreable | None
     model_version: str | None
     price_provider: object
     fundamental_provider: object

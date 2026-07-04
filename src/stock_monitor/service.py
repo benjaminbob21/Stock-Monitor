@@ -9,19 +9,26 @@ from __future__ import annotations
 
 import datetime as dt
 
-import lightgbm as lgb
 import pandas as pd
 
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
-from stock_monitor.models.scorer import score_row
+from stock_monitor.models.scorer import Scoreable, score_row
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.storage.db import Storage
 
 HISTORY_YEARS = 8
-DISCLAIMER = (
-    "Decision-support only — you execute every trade (no auto-trading). Conviction "
-    "is a ranking signal, NOT a calibrated probability (calibration arrives in Phase 2)."
+_GUARDRAIL = (
+    "Decision-support only — you execute every trade (no auto-trading). "
+    "Scores are estimates, not guarantees."
+)
+_UNCALIBRATED_NOTE = (
+    " Conviction is uncalibrated (a ranking signal, not a probability) "
+    "until enough data supports calibration."
+)
+_CALIBRATED_NOTE = (
+    " Conviction is calibrated on out-of-fold history — treat it as an estimated "
+    "probability, still not a certainty."
 )
 
 # Risk-flag thresholds (Phase 1, deliberately simple).
@@ -61,7 +68,7 @@ def risk_flags(row: dict[str, object]) -> list[str]:
 def score_ticker(
     ticker: str,
     *,
-    model: lgb.LGBMClassifier,
+    model: Scoreable,
     model_version: str,
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
@@ -118,12 +125,13 @@ def score_ticker(
         "as_of": as_of.isoformat(),
         "conviction": result.conviction,
         "recommendation": result.recommendation,
-        "calibrated": False,
+        "calibrated": result.calibrated,
         "model_version": model_version,
         "fundamentals_known_on": known_on_date.isoformat() if known_on_date else None,
         "drivers": drivers,
         "risk_flags": flags,
-        "disclaimer": DISCLAIMER,
+        "disclaimer": _GUARDRAIL
+        + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
     }
 
 

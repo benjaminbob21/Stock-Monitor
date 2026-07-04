@@ -35,7 +35,7 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 
 ## Status
 
-🚧 Early development. **Phase 0 built** (explainable CLI) and **Phase 1 complete**: a multi-factor PIT feature builder (momentum, volatility, RSI/trend technicals, quality, valuation, sentiment placeholder), a data-quality gate (Pandera), a DuckDB store, a training pipeline with MLflow logging + model persistence, a FastAPI `/score/{ticker}` endpoint, and a Next.js dashboard (search box → conviction card with score, SHAP drivers, and risk flags). Next: Phase 2 (walk-forward validation + confidence calibration + backtesting).
+🚧 Early development. **Phase 0 built** (explainable CLI), **Phase 1 complete** (multi-factor pipeline + DuckDB + MLflow + FastAPI + Next.js dashboard), and **Phase 2 complete** (trust): purged **walk-forward validation**, confidence **calibration** (Brier + reliability), and a cost-aware **backtest** (drawdown, hit-rate, vs-SPY). The API/UI serve a *calibrated* conviction with SHAP intact. Next: Phase 3 (full-universe daily scan → ranked "top-N to buy" + alerts).
 
 ### Roadmap
 
@@ -74,6 +74,13 @@ stock-monitor-train --watchlist AAPL MSFT NVDA KO   # ingest → validate → st
 uvicorn stock_monitor.api.app:app --port 8137       # FastAPI: GET /score/{ticker}
 
 cd web && npm install && npm run dev                # Next.js dashboard on http://localhost:3000
+```
+
+Check the model honestly (Phase 2 — trust):
+
+```bash
+stock-monitor-validate --watchlist AAPL MSFT NVDA KO   # purged walk-forward: Brier, AUC, reliability
+stock-monitor-backtest --watchlist AAPL MSFT NVDA KO   # cost-aware backtest: return/CAGR vs SPY, drawdown
 ```
 
 Secrets/API keys live only in the local `.env` (never committed).

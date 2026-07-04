@@ -34,6 +34,8 @@ dev = ["pytest", "ruff", "mypy", "httpx"]
 [project.scripts]
 stock-monitor = "stock_monitor.cli:main"
 stock-monitor-train = "stock_monitor.pipeline:main"
+stock-monitor-validate = "stock_monitor.evaluation:main"
+stock-monitor-backtest = "stock_monitor.backtest:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

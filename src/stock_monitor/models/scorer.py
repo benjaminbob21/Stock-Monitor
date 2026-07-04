@@ -20,12 +20,18 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import shap
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
 from stock_monitor.features.builder import FEATURE_COLUMNS
+from stock_monitor.models.calibration import CalibratedModel, Calibrator, fit_calibrator
 
 # Forward-return label window. Locked to 12 months for a cleaner long-term signal
 # (build-plan open item #4). Overridable via config for experiments.
 LABEL_WINDOW_MONTHS = 12
+
+# A model the scorer understands: a plain tree classifier (uncalibrated) or a
+# CalibratedModel (base tree + probability calibrator).
+Scoreable = lgb.LGBMClassifier | CalibratedModel
 
 
 @dataclass(frozen=True)
@@ -46,10 +52,11 @@ class ScoreResult:
     """A scored ticker with its transparent, PIT-audited context."""
 
     ticker: str
-    conviction: int  # 0-100 (uncalibrated in Phase 0)
+    conviction: int  # 0-100
     drivers: list[Driver]
     fundamentals_known_on: object | None  # datetime.date | None
     recommendation: str
+    calibrated: bool = False
 
 
 def train_model(frame: pd.DataFrame) -> lgb.LGBMClassifier:
@@ -77,6 +84,44 @@ def train_model(frame: pd.DataFrame) -> lgb.LGBMClassifier:
     return model
 
 
+def train_calibrated_model(
+    frame: pd.DataFrame, method: str = "sigmoid", cv: int = 3
+) -> CalibratedModel:
+    """Train the base model and fit a probability calibrator on out-of-fold preds.
+
+    The calibrator is fitted on cross-validated (out-of-fold) probabilities so it
+    corrects genuine over/under-confidence rather than memorising the training fit.
+    If there isn't enough data to cross-validate, the calibrator is omitted and the
+    model degrades gracefully to uncalibrated (honest, not silently wrong).
+    """
+    base = train_model(frame)
+    x = frame[list(FEATURE_COLUMNS)]
+    y = frame["label"].astype(int)
+
+    calibrator: Calibrator | None = None
+    class_counts = y.value_counts()
+    if len(y) >= 2 * cv and class_counts.min() >= cv:
+        try:
+            oof = cross_val_predict(
+                lgb.LGBMClassifier(**base.get_params()),
+                x,
+                y,
+                cv=StratifiedKFold(n_splits=cv, shuffle=True, random_state=42),
+                method="predict_proba",
+            )[:, 1]
+            calibrator = fit_calibrator(oof, y, method=method)
+        except (ValueError, IndexError):
+            calibrator = None
+
+    return CalibratedModel(base=base, calibrator=calibrator)
+
+
+def _unwrap(model: Scoreable) -> tuple[lgb.LGBMClassifier, Calibrator | None]:
+    if isinstance(model, CalibratedModel):
+        return model.base, model.calibrator
+    return model, None
+
+
 def _positive_class_shap(explainer: shap.TreeExplainer, x: pd.DataFrame) -> np.ndarray:
     """Return a 1-D SHAP vector for the positive class of a single row."""
     with warnings.catch_warnings():
@@ -92,14 +137,20 @@ def _positive_class_shap(explainer: shap.TreeExplainer, x: pd.DataFrame) -> np.n
     return values[0]
 
 
-def score_row(model: lgb.LGBMClassifier, row: dict[str, object]) -> ScoreResult:
-    """Score one PIT feature row and explain it with the top-3 SHAP drivers."""
+def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
+    """Score one PIT feature row and explain it with the top-3 SHAP drivers.
+
+    If ``model`` is a CalibratedModel, the conviction is the *calibrated* probability
+    while SHAP still explains the underlying tree model.
+    """
+    base, calibrator = _unwrap(model)
     x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
 
-    proba = float(model.predict_proba(x)[0, 1])
+    raw = float(base.predict_proba(x)[0, 1])
+    proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
     conviction = int(round(proba * 100))
 
-    explainer = shap.TreeExplainer(model)
+    explainer = shap.TreeExplainer(base)
     shap_vec = _positive_class_shap(explainer, x)
 
     ranked = sorted(
@@ -117,6 +168,7 @@ def score_row(model: lgb.LGBMClassifier, row: dict[str, object]) -> ScoreResult:
         drivers=ranked[:3],
         fundamentals_known_on=row.get("fundamentals_known_on"),
         recommendation=recommendation_band(conviction),
+        calibrated=calibrator is not None,
     )
 
 

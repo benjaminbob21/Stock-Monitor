@@ -19,7 +19,7 @@ from stock_monitor.config import Settings, get_settings
 from stock_monitor.features.builder import FEATURE_COLUMNS, build_training_frame
 from stock_monitor.features.schema import ValidationReport, validate_features
 from stock_monitor.models.registry import compute_model_version, save_model
-from stock_monitor.models.scorer import train_model
+from stock_monitor.models.scorer import train_calibrated_model
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.providers.edgar_provider import EdgarProvider
 from stock_monitor.providers.yfinance_provider import YFinanceProvider
@@ -36,16 +36,18 @@ class TrainingResult:
     rows_trained: int
     positive_rate: float
     train_accuracy: float
+    calibration: str
     report: ValidationReport
     model_path: str
 
 
-def _assemble_frame(
+def assemble_training_frame(
     watchlist: list[str],
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     label_window_months: int,
 ) -> pd.DataFrame:
+    """Fetch prices + PIT fundamentals per ticker and pool their labelled frames."""
     end = dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
 
@@ -77,6 +79,7 @@ def _log_mlflow(
     accuracy: float,
     settings: Settings,
     params: dict,
+    calibration: str,
 ) -> None:
     # MLflow 3.x gates the local file store behind an opt-in; mlruns/ is gitignored
     # and the right weight for a solo project (build-plan §4).
@@ -87,6 +90,7 @@ def _log_mlflow(
         mlflow.set_tag("model_version", version)
         mlflow.log_params(params)
         mlflow.log_param("label_window_months", settings.label_window_months)
+        mlflow.log_param("calibration", calibration)
         mlflow.log_param("features", ",".join(FEATURE_COLUMNS))
         mlflow.log_metrics(
             {
@@ -111,7 +115,7 @@ def run_training(
     price_provider = price_provider or YFinanceProvider()
     fundamental_provider = fundamental_provider or EdgarProvider()
 
-    pooled = _assemble_frame(
+    pooled = assemble_training_frame(
         watchlist, price_provider, fundamental_provider, settings.label_window_months
     )
     if pooled.empty:
@@ -123,21 +127,25 @@ def run_training(
         store.upsert_features(valid)
         store.record_quarantine(quarantined)
 
-    model = train_model(valid)
+    model = train_calibrated_model(valid)
     version = compute_model_version(model)
     save_model(model, settings.model_path)
 
     x = valid[list(FEATURE_COLUMNS)]
-    accuracy = float((model.predict(x) == valid["label"].astype(int)).mean())
+    accuracy = float((model.base.predict(x) == valid["label"].astype(int)).mean())
+    calibration = model.calibrator.method if model.calibrator is not None else "none"
 
     if log_mlflow:
-        _log_mlflow(valid, report, version, accuracy, settings, model.get_params())
+        _log_mlflow(
+            valid, report, version, accuracy, settings, model.base.get_params(), calibration
+        )
 
     return TrainingResult(
         model_version=version,
         rows_trained=len(valid),
         positive_rate=float(valid["label"].mean()),
         train_accuracy=accuracy,
+        calibration=calibration,
         report=report,
         model_path=settings.model_path,
     )
@@ -161,9 +169,10 @@ def main(argv: list[str] | None = None) -> int:
         f"Trained {result.model_version} on {result.rows_trained} rows "
         f"(positive_rate={result.positive_rate:.2f}, "
         f"in-sample_acc={result.train_accuracy:.2f}, "
+        f"calibration={result.calibration}, "
         f"quarantined={result.report.quarantined}/{result.report.total}).\n"
         f"Model saved to {result.model_path}. In-sample accuracy is NOT validation "
-        f"— walk-forward + calibration are Phase 2."
+        f"— run `stock-monitor-validate` for honest walk-forward + calibration metrics."
     )
     return 0
 

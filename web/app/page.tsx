@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ConvictionCard } from "@/components/ConvictionCard";
-import { NewsPanel } from "@/components/NewsPanel";
+import { BottomNav, type Tab } from "@/components/BottomNav";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { StockDetailSheet } from "@/components/StockDetailSheet";
 import type {
   ApiError,
   NewsResponse,
@@ -18,7 +19,12 @@ import type {
   ScoreResponse,
 } from "@/lib/types";
 
-type Tab = "opportunities" | "recommendations" | "tracked";
+const TAB_TITLES: Record<Tab, string> = {
+  opportunities: "Ranked opportunities",
+  recommendations: "High-confidence buys",
+  tracked: "Portfolio",
+  search: "Search",
+};
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("opportunities");
@@ -28,6 +34,8 @@ export default function Home() {
   const [news, setNews] = useState<NewsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [detailTicker, setDetailTicker] = useState("");
 
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
@@ -128,11 +136,12 @@ export default function Home() {
     loadPositions();
   }, [loadOpportunities, loadRecommendations, loadPositions]);
 
+  // Open the full-screen analysis sheet for a ticker (from any list or search).
   const lookup = useCallback(async (symbol: string) => {
     const clean = symbol.trim().toUpperCase();
     if (!clean) return;
-    setTab("opportunities");
-    setTicker(clean);
+    setDetailTicker(clean);
+    setSheetOpen(true);
     setLoading(true);
     setError(null);
     setData(null);
@@ -157,6 +166,25 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false);
+  }, []);
+
+  // Make the phone's back gesture / button close the analysis sheet instead of
+  // leaving the app, and lock the underlying list so it keeps its scroll spot.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    document.body.classList.add("sheet-open");
+    window.history.pushState({ sheet: true }, "");
+    const onPop = () => setSheetOpen(false);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      document.body.classList.remove("sheet-open");
+      if (window.history.state?.sheet) window.history.back();
+    };
+  }, [sheetOpen]);
 
   const addPosition = useCallback(async () => {
     const clean = addTicker.trim().toUpperCase();
@@ -199,176 +227,177 @@ export default function Home() {
   );
 
   return (
-    <main className="container">
-      <div className="header">
-        <h1>Stock-Monitor</h1>
-        <p>
-          Ranks the market vs the S&amp;P — you execute every trade. No
-          auto-trading.
-        </p>
-      </div>
+    <div className="app-shell">
+      <ServiceWorkerRegister />
 
-      <nav className="tabs">
-        {(["opportunities", "recommendations", "tracked"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={`tab ${tab === t ? "active" : ""}`}
-            onClick={() => setTab(t)}
-          >
-            {t === "opportunities"
-              ? "Opportunities"
-              : t === "recommendations"
-                ? "Recommendations"
-                : "Tracked"}
-          </button>
-        ))}
-      </nav>
+      <header className="topbar">
+        <div className="topbar-brand">
+          <span className="topbar-title">Stock-Monitor</span>
+          <span className="topbar-sub">{TAB_TITLES[tab]}</span>
+        </div>
+      </header>
 
-      {tab === "opportunities" && (
-        <>
-          <form
-            className="searchbar"
-            onSubmit={(e) => {
-              e.preventDefault();
-              lookup(ticker);
-            }}
-          >
-            <input
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="Look up any ticker (e.g. AAPL)"
-              aria-label="Ticker symbol"
-            />
-            <button type="submit" disabled={loading || !ticker.trim()}>
-              {loading ? "Scoring…" : "Score"}
-            </button>
-          </form>
-
-          {error && <div className="status error">{error}</div>}
-          {data && <ConvictionCard data={data} />}
-          {news && <NewsPanel news={news} />}
-
-          <div className="opps-header">
-            <h2>Ranked opportunities</h2>
-            <div className="opps-actions">
-              <span className="opps-meta">
-                {scannedAt
-                  ? `scanned ${new Date(scannedAt).toLocaleString()}`
-                  : "not scanned yet"}
-              </span>
+      <main className="tabpanel">
+        {tab === "opportunities" && (
+          <>
+            <div className="opps-header">
+              <h2>Ranked opportunities</h2>
               <button
                 type="button"
                 className="refresh-btn"
                 onClick={runScan}
                 disabled={scanning}
               >
-                {scanning ? "Refreshing…" : "Refresh data"}
+                {scanning ? "Refreshing…" : "Refresh"}
               </button>
             </div>
-          </div>
-          {scanNote && <div className="status">{scanNote}</div>}
-          {oppNote && <div className="status">{oppNote}</div>}
-          {opps.length > 0 && (
-            <OpportunitiesList items={opps} onPick={lookup} />
-          )}
-        </>
-      )}
+            <p className="opps-meta">
+              {scannedAt
+                ? `scanned ${new Date(scannedAt).toLocaleString()}`
+                : "not scanned yet"}
+            </p>
+            {scanNote && <div className="status">{scanNote}</div>}
+            {oppNote && <div className="status">{oppNote}</div>}
+            {opps.length > 0 && (
+              <OpportunitiesList items={opps} onPick={lookup} />
+            )}
+          </>
+        )}
 
-      {tab === "recommendations" && (
-        <>
-          <div className="opps-header">
-            <h2>High-confidence buys</h2>
-            <span className="opps-meta">only shown when the model is sure</span>
-          </div>
-          {recNote && <div className="status">{recNote}</div>}
-          <div className="reclist">
-            {recs.map((r) => (
-              <button
-                key={r.ticker}
-                className="reccard"
-                onClick={() => lookup(r.ticker)}
-              >
-                <div className="recrow">
-                  <span className="oppticker">{r.ticker}</span>
-                  <span className="oppscore" style={{ color: "var(--green)" }}>
-                    {r.capped_conviction}
-                    <small>/100</small>
-                  </span>
-                  <span className="opprec" style={{ color: "var(--green)" }}>
-                    {r.recommendation}
-                  </span>
-                </div>
-                <p className="recwhy">{r.rationale}</p>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {tab === "tracked" && (
-        <>
-          <form
-            className="searchbar"
-            onSubmit={(e) => {
-              e.preventDefault();
-              addPosition();
-            }}
-          >
-            <input
-              value={addTicker}
-              onChange={(e) => setAddTicker(e.target.value)}
-              placeholder="Add a stock you bought (e.g. NVDA)"
-              aria-label="Ticker to track"
-            />
-            <button type="submit" disabled={addBusy || !addTicker.trim()}>
-              {addBusy ? "Adding…" : "Add"}
-            </button>
-          </form>
-          <p className="hint">
-            Snapshots today&apos;s price + the model&apos;s call. Then tracks it
-            and gives you two reads — a crisp signal and an expert view — so you
-            decide.
-          </p>
-
-          <div className="opps-header">
-            <h2>Open positions</h2>
-          </div>
-          {posNote && <div className="status">{posNote}</div>}
-          <div className="reclist">
-            {positions
-              .filter((p) => p.status === "open")
-              .map((p) => (
-                <PositionCard
-                  key={p.id}
-                  p={p}
-                  onSell={sellPosition}
-                  onLookup={lookup}
-                />
+        {tab === "recommendations" && (
+          <>
+            <div className="opps-header">
+              <h2>High-confidence buys</h2>
+              <span className="opps-meta">only when the model is sure</span>
+            </div>
+            {recNote && <div className="status">{recNote}</div>}
+            <div className="reclist">
+              {recs.map((r) => (
+                <button
+                  key={r.ticker}
+                  className="reccard"
+                  onClick={() => lookup(r.ticker)}
+                >
+                  <div className="recrow">
+                    <span className="oppticker">{r.ticker}</span>
+                    <span className="oppscore" style={{ color: "var(--green)" }}>
+                      {r.capped_conviction}
+                      <small>/100</small>
+                    </span>
+                    <span className="opprec" style={{ color: "var(--green)" }}>
+                      {r.recommendation}
+                    </span>
+                  </div>
+                  <p className="recwhy">{r.rationale}</p>
+                </button>
               ))}
-          </div>
+            </div>
+          </>
+        )}
 
-          {positions.some((p) => p.status === "sold") && (
-            <>
-              <div className="opps-header">
-                <h2>Sold</h2>
-                <span className="opps-meta">how the call played out</span>
-              </div>
-              <div className="reclist">
-                {positions
-                  .filter((p) => p.status === "sold")
-                  .map((p) => (
-                    <PositionCard
-                      key={p.id}
-                      p={p}
-                      onSell={sellPosition}
-                      onLookup={lookup}
-                    />
-                  ))}
-              </div>
-            </>
-          )}
-        </>
+        {tab === "tracked" && (
+          <>
+            <form
+              className="searchbar"
+              onSubmit={(e) => {
+                e.preventDefault();
+                addPosition();
+              }}
+            >
+              <input
+                value={addTicker}
+                onChange={(e) => setAddTicker(e.target.value)}
+                placeholder="Add a stock you bought (e.g. NVDA)"
+                aria-label="Ticker to track"
+              />
+              <button type="submit" disabled={addBusy || !addTicker.trim()}>
+                {addBusy ? "Adding…" : "Add"}
+              </button>
+            </form>
+            <p className="hint">
+              Snapshots today&apos;s price + the model&apos;s call, then tracks
+              it — a crisp signal and an expert view so you decide.
+            </p>
+
+            <div className="opps-header">
+              <h2>Open positions</h2>
+            </div>
+            {posNote && <div className="status">{posNote}</div>}
+            <div className="reclist">
+              {positions
+                .filter((p) => p.status === "open")
+                .map((p) => (
+                  <PositionCard
+                    key={p.id}
+                    p={p}
+                    onSell={sellPosition}
+                    onLookup={lookup}
+                  />
+                ))}
+            </div>
+
+            {positions.some((p) => p.status === "sold") && (
+              <>
+                <div className="opps-header">
+                  <h2>Sold</h2>
+                  <span className="opps-meta">how the call played out</span>
+                </div>
+                <div className="reclist">
+                  {positions
+                    .filter((p) => p.status === "sold")
+                    .map((p) => (
+                      <PositionCard
+                        key={p.id}
+                        p={p}
+                        onSell={sellPosition}
+                        onLookup={lookup}
+                      />
+                    ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {tab === "search" && (
+          <>
+            <form
+              className="searchbar"
+              onSubmit={(e) => {
+                e.preventDefault();
+                lookup(ticker);
+              }}
+            >
+              <input
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                placeholder="Look up any ticker (e.g. AAPL)"
+                aria-label="Ticker symbol"
+              />
+              <button type="submit" disabled={loading || !ticker.trim()}>
+                {loading ? "Scoring…" : "Score"}
+              </button>
+            </form>
+            <p className="hint">
+              Score any symbol on demand — you&apos;ll get the full conviction
+              breakdown and live news sentiment.
+            </p>
+          </>
+        )}
+      </main>
+
+      <BottomNav tab={tab} onChange={setTab} />
+
+      {sheetOpen && (
+        <StockDetailSheet
+          ticker={detailTicker}
+          data={data}
+          news={news}
+          loading={loading}
+          error={error}
+          onClose={closeSheet}
+        />
       )}
-    </main>
+    </div>
   );
 }

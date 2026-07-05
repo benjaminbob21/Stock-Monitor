@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -108,11 +108,16 @@ def build_feature_row(
     prices: pd.DataFrame,
     facts: Sequence[FundamentalFact],
     as_of: dt.date,
+    sentiment_lookup: Callable[[dt.date], float] | None = None,
 ) -> dict[str, object] | None:
     """Build a single PIT-correct feature row, or ``None`` if history is too short.
 
     NaN feature values are intentional where a fundamental is unavailable — LightGBM
     handles missing values natively, and a missing pillar must never fabricate a number.
+
+    ``sentiment_lookup``, when provided, returns the PIT news sentiment knowable on
+    ``as_of`` (see :func:`stock_monitor.backfill.make_sentiment_lookup`). It defaults to
+    the neutral 0.0 placeholder, preserving behaviour when no backfill exists.
     """
     as_of_ts = pd.Timestamp(as_of)
     window = prices.loc[:as_of_ts]
@@ -166,7 +171,7 @@ def build_feature_row(
         "profit_margin": _safe_ratio(net_income, revenues),
         "earnings_yield": _safe_ratio(net_income, market_cap),
         "fcf_yield": _safe_ratio(free_cash_flow, market_cap),
-        "sentiment": 0.0,
+        "sentiment": float(sentiment_lookup(as_of)) if sentiment_lookup else 0.0,
     }
 
 
@@ -177,12 +182,16 @@ def build_training_frame(
     benchmark_prices: pd.DataFrame,
     label_window_months: int,
     step_months: int = 1,
+    sentiment_lookup: Callable[[dt.date], float] | None = None,
 ) -> pd.DataFrame:
     """Build a labelled frame by walking monthly as-of dates through history.
 
     Label = 1 if the ticker's forward ``label_window_months`` return beats the
     benchmark's over the same window, else 0. Both features and label are computed
     PIT-correctly: no row can see data past its own ``as_of``.
+
+    Pass ``sentiment_lookup`` to bake the backfilled PIT news sentiment into each row's
+    ``sentiment`` feature; omit it to keep the neutral 0.0 placeholder.
     """
     if prices.empty:
         return pd.DataFrame(columns=[*FEATURE_COLUMNS, "label", "as_of", "fundamentals_known_on"])
@@ -192,7 +201,7 @@ def build_training_frame(
 
     for as_of_ts in grid:
         as_of = as_of_ts.date()
-        row = build_feature_row(ticker, prices, facts, as_of)
+        row = build_feature_row(ticker, prices, facts, as_of, sentiment_lookup)
         if row is None:
             continue
 

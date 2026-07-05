@@ -70,3 +70,96 @@ def get_notifier(settings: Settings) -> Notifier:
     if settings.telegram_bot_token and settings.telegram_chat_id:
         return TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     return LoggingNotifier()
+
+
+class EmailNotifier(Notifier):
+    """Delivers alerts/digests to one or more inboxes over SMTP (STARTTLS)."""
+
+    name = "email"
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        sender: str,
+        recipients: list[str],
+    ) -> None:
+        self._host = host
+        self._port = port
+        self._user = user
+        self._password = password
+        self._sender = sender or user
+        self._recipients = recipients
+
+    def send(self, title: str, body: str) -> bool:
+        import smtplib
+        from email.message import EmailMessage
+
+        if not self._recipients:
+            logger.warning("email notifier has no recipients; dropping '%s'", title)
+            return False
+        msg = EmailMessage()
+        msg["Subject"] = title
+        msg["From"] = self._sender
+        msg["To"] = ", ".join(self._recipients)
+        msg.set_content(body)
+        try:
+            with smtplib.SMTP(self._host, self._port, timeout=20) as smtp:
+                smtp.starttls()
+                if self._user and self._password:
+                    smtp.login(self._user, self._password)
+                smtp.send_message(msg)
+            return True
+        except Exception:  # noqa: BLE001 — a failed digest must never crash a job
+            logger.exception("email delivery failed")
+            return False
+
+
+class MultiNotifier(Notifier):
+    """Fan-out notifier: delivers to every configured transport (best-effort)."""
+
+    name = "multi"
+
+    def __init__(self, notifiers: list[Notifier]) -> None:
+        self._notifiers = notifiers
+
+    def send(self, title: str, body: str) -> bool:
+        results = [n.send(title, body) for n in self._notifiers]
+        return any(results)
+
+
+def get_email_notifier(settings: Settings) -> EmailNotifier | None:
+    """Return an EmailNotifier if SMTP is configured, else None."""
+    if not settings.smtp_host or not settings.email_to:
+        return None
+    recipients = [r.strip() for r in settings.email_to.split(",") if r.strip()]
+    return EmailNotifier(
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        user=settings.smtp_user,
+        password=settings.smtp_password,
+        sender=settings.email_from,
+        recipients=recipients,
+    )
+
+
+def get_digest_notifiers(settings: Settings) -> Notifier:
+    """Return a notifier that fans out to all configured digest transports.
+
+    Telegram + email if configured; falls back to logging so a digest is always
+    delivered *somewhere* visible even with zero secrets.
+    """
+    channels: list[Notifier] = []
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        channels.append(
+            TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+        )
+    email = get_email_notifier(settings)
+    if email is not None:
+        channels.append(email)
+    if not channels:
+        channels.append(LoggingNotifier())
+    return MultiNotifier(channels)

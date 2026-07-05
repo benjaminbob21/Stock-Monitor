@@ -24,6 +24,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from stock_monitor import __version__
 from stock_monitor.config import get_settings
 from stock_monitor.earnings import EarningsProvider, get_earnings_provider
+from stock_monitor.features.builder import build_feature_row
 from stock_monitor.models.registry import compute_model_version, load_model
 from stock_monitor.models.scorer import Scoreable
 from stock_monitor.positions import (
@@ -31,8 +32,8 @@ from stock_monitor.positions import (
     open_position,
     sell_position,
 )
+from stock_monitor.providers import get_price_provider
 from stock_monitor.providers.edgar_provider import EdgarProvider
-from stock_monitor.providers.yfinance_provider import YFinanceProvider
 from stock_monitor.sentiment import (
     NewsProvider,
     SentimentAnalyzer,
@@ -91,7 +92,7 @@ def build_state() -> AppState:
     return AppState(
         model=model,
         model_version=version,
-        price_provider=YFinanceProvider(),
+        price_provider=get_price_provider(settings),
         fundamental_provider=EdgarProvider(),
         db_path=settings.db_path,
         label_window_months=settings.label_window_months,
@@ -342,6 +343,113 @@ def trigger_scan(state: StateDep, background: BackgroundTasks) -> dict[str, obje
 def scan_status() -> dict[str, object]:
     """Poll target for the UI: is a scan running, and how did the last one go?"""
     return dict(_scan_status)
+
+
+@app.get("/paper/summary")
+def paper_summary_endpoint(state: StateDep) -> dict[str, object]:
+    """Paper-mode track record: hit-rate + avg excess return vs SPY on matured picks.
+
+    This is the honest "does it work?" scoreboard — simulated buys of the daily
+    buy-zone names, scored against the benchmark once their horizon matures.
+    """
+    from stock_monitor.paper import paper_summary
+
+    if not state.db_path:
+        return {"summary": None, "note": "storage unavailable"}
+    with Storage(state.db_path) as store:
+        summary = paper_summary(store)
+    note = None if summary["closed"] else "No matured paper picks yet — check back later."
+    return {"summary": summary, "note": note}
+
+
+@app.get("/analyst/{ticker}")
+def analyst(ticker: str, state: StateDep) -> dict[str, object]:
+    """Optional LLM second opinion on a ticker (opt-in; disabled by default, has a cost).
+
+    Scores the ticker with the primary model, attaches recent news sentiment, and asks
+    the configured LLM for an independent BUY/HOLD/SELL read. The model score is always
+    the signal of record — this is a second opinion for a human to weigh.
+    """
+    from stock_monitor.analyst import second_opinion
+
+    settings = get_settings()
+    upper = ticker.upper()
+    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+        return {
+            "ticker": upper,
+            "opinion": None,
+            "note": "AI analyst disabled — set LLM_ANALYST_ENABLED=1 and OPENAI_API_KEY.",
+        }
+    if state.model is None:
+        raise HTTPException(status_code=503, detail="no trained model available")
+
+    try:
+        payload = score_ticker(
+            ticker,
+            model=state.model,
+            model_version=state.model_version or "unknown",
+            price_provider=state.price_provider,  # type: ignore[arg-type]
+            fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
+            label_window_months=state.label_window_months,
+            storage=None,
+            short_model=state.model_short,
+            earnings_provider=state.earnings_provider,
+        )
+    except TickerDataUnavailable as exc:
+        raise HTTPException(status_code=404, detail=f"no price data for {upper}") from exc
+    except (InsufficientHistory, DataQuarantined) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if state.news_provider is not None and state.analyzer is not None:
+        report = analyze_ticker(
+            ticker, state.news_provider, state.analyzer,
+            lookback_days=state.news_lookback_days,
+        )
+        payload["news_sentiment"] = round(report.score, 3)
+        payload["news_label"] = report.label
+
+    opinion = second_opinion(payload, settings)
+    return {
+        "ticker": upper,
+        "opinion": opinion,
+        "note": None if opinion else "AI analyst unavailable (LLM call failed).",
+    }
+
+
+@app.get("/similar/{ticker}")
+def similar(ticker: str, state: StateDep, limit: int = 5) -> dict[str, object]:
+    """Find past setups like today's and how they played out (learn-from-history signal).
+
+    Builds today's PIT feature row for the ticker, then finds the most similar labelled
+    setups across all of local history and reports how many beat the benchmark — an
+    empirical, no-lookahead base rate that adds confidence by analogy to the model score.
+    """
+    from stock_monitor.similar import find_similar_setups
+
+    upper = ticker.upper()
+    if not state.db_path:
+        return {"ticker": upper, "similar": None, "note": "storage unavailable"}
+
+    end = dt.date.today()
+    start = end - dt.timedelta(days=365 * 8)
+    prices = state.price_provider.get_prices(ticker, start, end)  # type: ignore[attr-defined]
+    if prices.empty:
+        raise HTTPException(status_code=404, detail=f"no price data for {upper}")
+    facts = state.fundamental_provider.get_fundamentals(ticker)  # type: ignore[attr-defined]
+    as_of = prices.index[-1].date()
+    row = build_feature_row(ticker, prices, facts, as_of)
+    if row is None:
+        raise HTTPException(status_code=422, detail=f"insufficient history for {upper}")
+
+    with Storage(state.db_path) as store:
+        history = store.read_features()
+    result = find_similar_setups(row, history, k=limit)
+    note = (
+        None
+        if result["analogs"]
+        else "Not enough labelled history yet — train on more names/dates to enable this."
+    )
+    return {"ticker": upper, "as_of": as_of.isoformat(), "similar": result, "note": note}
 
 
 @app.post("/positions/{ticker}")

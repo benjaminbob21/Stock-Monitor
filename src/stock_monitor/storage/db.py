@@ -108,6 +108,37 @@ CREATE TABLE IF NOT EXISTS alerts (
     detail VARCHAR,
     sent_at TIMESTAMP DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS paper_picks (
+    id VARCHAR PRIMARY KEY,
+    ticker VARCHAR,
+    pick_date DATE,
+    conviction INTEGER,
+    recommendation VARCHAR,
+    horizon_months INTEGER,
+    entry_price DOUBLE,
+    benchmark_entry DOUBLE,
+    model_version VARCHAR,
+    status VARCHAR DEFAULT 'open',
+    matured_on DATE,
+    exit_price DOUBLE,
+    benchmark_exit DOUBLE,
+    stock_return DOUBLE,
+    benchmark_return DOUBLE,
+    excess_return DOUBLE,
+    beat_benchmark BOOLEAN,
+    created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS news_sentiment (
+    ticker VARCHAR NOT NULL,
+    date DATE NOT NULL,
+    sentiment DOUBLE,
+    article_count INTEGER,
+    backend VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (ticker, date)
+);
 """
 
 
@@ -222,7 +253,8 @@ class Storage:
     def count(self, table: str) -> int:
         """Return the row count of one of the known tables."""
         if table not in {
-            "features", "scores", "quarantine", "opportunities", "runs", "positions", "alerts"
+            "features", "scores", "quarantine", "opportunities", "runs", "positions",
+            "alerts", "paper_picks", "news_sentiment",
         }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
@@ -409,3 +441,140 @@ class Storage:
     def read_features(self) -> pd.DataFrame:
         """Return all stored feature rows as a DataFrame."""
         return self._con.execute("SELECT * FROM features ORDER BY ticker, as_of").df()
+
+    # ------------------------------------------------------------ news sentiment
+    def upsert_news_sentiment(self, df: pd.DataFrame) -> int:
+        """Upsert daily per-ticker news sentiment (PIT feature source). Returns rows written.
+
+        Expected columns: ``ticker``, ``date``, ``sentiment``, ``article_count``,
+        ``backend``. Idempotent on (ticker, date) so a backfill can be re-run safely.
+        """
+        if df is None or df.empty:
+            return 0
+        cols = ["ticker", "date", "sentiment", "article_count", "backend"]
+        frame = df[cols].copy()
+        self._con.register("_news_tmp", frame)
+        try:
+            self._con.execute(
+                """
+                INSERT INTO news_sentiment (ticker, date, sentiment, article_count, backend)
+                SELECT ticker, date, sentiment, article_count, backend FROM _news_tmp
+                ON CONFLICT (ticker, date) DO UPDATE SET
+                    sentiment = excluded.sentiment,
+                    article_count = excluded.article_count,
+                    backend = excluded.backend
+                """
+            )
+        finally:
+            self._con.unregister("_news_tmp")
+        return int(len(frame))
+
+    def read_news_sentiment(self, ticker: str | None = None) -> pd.DataFrame:
+        """Return stored daily news sentiment, optionally for a single ticker."""
+        if ticker:
+            return self._con.execute(
+                "SELECT * FROM news_sentiment WHERE ticker = ? ORDER BY date",
+                [ticker.upper()],
+            ).df()
+        return self._con.execute(
+            "SELECT * FROM news_sentiment ORDER BY ticker, date"
+        ).df()
+
+    # ------------------------------------------------------------------ paper mode
+    def record_paper_pick(
+        self,
+        *,
+        pick_id: str,
+        ticker: str,
+        pick_date: dt.date,
+        conviction: int,
+        recommendation: str,
+        horizon_months: int,
+        entry_price: float,
+        benchmark_entry: float,
+        model_version: str,
+        matured_on: dt.date,
+    ) -> bool:
+        """Record a paper pick idempotently. Returns True if a new row was inserted.
+
+        The pick is a *simulated* buy — the engine's daily conviction call, logged with
+        the price it would have paid, so we can later score the recommendation against
+        the benchmark with zero real money at risk (build-plan Phase 4: paper mode).
+        """
+        before = self.count("paper_picks")
+        self._con.execute(
+            """
+            INSERT OR IGNORE INTO paper_picks
+                (id, ticker, pick_date, conviction, recommendation, horizon_months,
+                 entry_price, benchmark_entry, model_version, status, matured_on)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+            """,
+            [
+                pick_id, ticker, pick_date, conviction, recommendation, horizon_months,
+                entry_price, benchmark_entry, model_version, matured_on,
+            ],
+        )
+        return self.count("paper_picks") > before
+
+    def _paper_row(self, row: tuple) -> dict:
+        return {
+            "id": row[0],
+            "ticker": row[1],
+            "pick_date": row[2].isoformat() if row[2] is not None else None,
+            "conviction": row[3],
+            "recommendation": row[4],
+            "horizon_months": row[5],
+            "entry_price": row[6],
+            "benchmark_entry": row[7],
+            "model_version": row[8],
+            "status": row[9],
+            "matured_on": row[10].isoformat() if row[10] is not None else None,
+            "exit_price": row[11],
+            "benchmark_exit": row[12],
+            "stock_return": row[13],
+            "benchmark_return": row[14],
+            "excess_return": row[15],
+            "beat_benchmark": row[16],
+        }
+
+    def list_paper_picks(self, status: str | None = None) -> list[dict]:
+        """Return paper picks (optionally filtered by 'open'/'closed'), newest first."""
+        query = (
+            "SELECT id, ticker, pick_date, conviction, recommendation, horizon_months, "
+            "entry_price, benchmark_entry, model_version, status, matured_on, exit_price, "
+            "benchmark_exit, stock_return, benchmark_return, excess_return, beat_benchmark "
+            "FROM paper_picks"
+        )
+        params: list[object] = []
+        if status is not None:
+            query += " WHERE status = ?"
+            params.append(status)
+        query += " ORDER BY pick_date DESC, ticker"
+        rows = self._con.execute(query, params).fetchall()
+        return [self._paper_row(r) for r in rows]
+
+    def close_paper_pick(
+        self,
+        pick_id: str,
+        *,
+        exit_price: float,
+        benchmark_exit: float,
+        stock_return: float,
+        benchmark_return: float,
+        excess_return: float,
+        beat_benchmark: bool,
+    ) -> None:
+        """Mark a matured paper pick closed, recording its realised return vs benchmark."""
+        self._con.execute(
+            """
+            UPDATE paper_picks SET
+                status = 'closed', exit_price = ?, benchmark_exit = ?,
+                stock_return = ?, benchmark_return = ?, excess_return = ?,
+                beat_benchmark = ?
+            WHERE id = ?
+            """,
+            [
+                exit_price, benchmark_exit, stock_return, benchmark_return,
+                excess_return, beat_benchmark, pick_id,
+            ],
+        )

@@ -48,8 +48,46 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     alert_conviction_threshold: int = 70
 
+    # Email digest (SMTP). Empty smtp_host = email disabled (Telegram/logging still work).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    email_from: str = ""
+    email_to: str = ""  # comma-separated recipients
+
+    # Digest cadence (local hours / weekday). Daily digest = Telegram; weekly = email.
+    daily_digest_hour: int = 23  # after the daily scan
+    weekly_digest_day: str = "mon"  # apscheduler day_of_week
+    weekly_digest_hour: int = 8
+    digest_top_n: int = 10
+
+    # Paper mode: simulate the daily "buy" call and score it vs the benchmark later.
+    paper_min_conviction: int = 70  # only paper-track names in the buy zone
+    paper_horizon_months: int = 12  # how long a paper pick is held before it's scored
+
+    # Scheduled retraining (the heavy job). Off by default; enable on the always-on box.
+    retrain_weekly: bool = False
+    retrain_day_of_week: str = "sun"
+    retrain_hour: int = 3
+
+    # LLM "AI analyst" second opinion (optional, has per-call cost). Empty key = disabled.
+    llm_analyst_enabled: bool = False
+    openai_api_key: str = ""
+    llm_model: str = "gpt-4o-mini"
+    llm_base_url: str = "https://api.openai.com/v1"
+
     # Optional data keys (activated when set).
     finnhub_api_key: str = ""
+    eodhd_api_key: str = ""  # EODHD: deep history + historical news (one-month backfill)
+    tiingo_api_key: str = ""  # Tiingo: reliable EOD prices (free tier is generous)
+
+    # Preferred price source: "yfinance" (default, no key), "tiingo", or "eodhd".
+    price_provider: str = "yfinance"
+
+    # Historical-news backfill (learn-from-history). Only used by the backfill job.
+    news_backfill_years: int = 5  # how far back to pull + score news for the feature
+    news_backfill_max_per_day: int = 50  # cap articles/day to keep scoring bounded
 
     # Shared secret protecting the API when exposed publicly. Empty = auth disabled
     # (local dev). When set, callers must send it as the `X-API-Key` header.

@@ -108,6 +108,79 @@ def _safe(fn, *args) -> None:
         logger.exception("scheduled job failed: %s", getattr(fn, "__name__", fn))
 
 
+def run_paper_tracking(settings: Settings, price_provider=None) -> tuple[int, int]:
+    """Log the latest scan's buy-zone names as paper picks and close matured ones.
+
+    This is the validation loop: simulate the daily buy call, then score it vs SPY when
+    the horizon matures — no real money, honest track record.
+    """
+    from stock_monitor.paper import evaluate_paper_picks, record_paper_picks
+    from stock_monitor.providers.yfinance_provider import YFinanceProvider
+
+    price_provider = price_provider or YFinanceProvider()
+    with Storage(settings.db_path) as storage:
+        ranked = storage.read_latest_opportunities(limit=1000)
+        recorded = record_paper_picks(settings, ranked, price_provider, storage)
+        closed = evaluate_paper_picks(settings, price_provider, storage)
+    logger.info("paper tracking: %d recorded, %d closed", recorded, closed)
+    return recorded, closed
+
+
+def send_daily_digest(settings: Settings, notifier: Notifier) -> None:
+    """Send a top-N digest (with paper track record) to the daily channel (Telegram)."""
+    from stock_monitor.paper import compose_digest, paper_summary
+
+    with Storage(settings.db_path) as storage:
+        ranked = storage.read_latest_opportunities(limit=settings.digest_top_n)
+        summary = paper_summary(storage)
+    title, body = compose_digest(ranked, summary, top_n=settings.digest_top_n)
+    notifier.send(title, body)
+
+
+def send_weekly_digest(settings: Settings) -> None:
+    """Email the weekly digest (falls back to the default notifier if SMTP is unset)."""
+    from stock_monitor.notify import get_email_notifier, get_notifier
+    from stock_monitor.paper import compose_digest, paper_summary
+
+    notifier = get_email_notifier(settings) or get_notifier(settings)
+    with Storage(settings.db_path) as storage:
+        ranked = storage.read_latest_opportunities(limit=settings.digest_top_n)
+        summary = paper_summary(storage)
+    title, body = compose_digest(ranked, summary, top_n=settings.digest_top_n)
+    notifier.send(f"[Weekly] {title}", body)
+
+
+def run_retrain(settings: Settings) -> None:
+    """Retrain the models on the full universe (the heavy job) and hot-reload the API.
+
+    Writes the fresh model to disk (so a restart always picks it up) and, best-effort,
+    swaps it into the running API's in-memory state so scores update without a restart.
+    """
+    from stock_monitor.pipeline import run_training
+    from stock_monitor.universe import get_universe
+
+    result = run_training(list(get_universe()), settings=settings)
+    logger.info(
+        "retrain complete: %s (rows=%d, acc=%.3f)",
+        result.model_version, result.rows_trained, result.train_accuracy,
+    )
+    try:
+        from stock_monitor.api import app as api_app
+        from stock_monitor.models.registry import compute_model_version, load_model
+
+        if api_app._state is not None:
+            api_app._state.model = load_model(settings.model_path)
+            api_app._state.model_version = (
+                compute_model_version(api_app._state.model)
+                if api_app._state.model is not None
+                else None
+            )
+            api_app._state.model_short = load_model(settings.model_path_short)
+            logger.info("hot-reloaded model into API: %s", api_app._state.model_version)
+    except Exception:  # noqa: BLE001 — fresh model is safely on disk regardless
+        logger.exception("model hot-reload failed (new model is still on disk)")
+
+
 def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
     """Register the tiered jobs on any APScheduler instance."""
     scheduler.add_job(
@@ -141,6 +214,36 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
         id="holdings_news",
         replace_existing=True,
     )
+
+    def _daily_digest() -> None:
+        # Snapshot today's picks as paper buys, close matured ones, then send the digest.
+        _safe(run_paper_tracking, settings)
+        _safe(send_daily_digest, settings, notifier)
+
+    scheduler.add_job(
+        _daily_digest,
+        "cron",
+        hour=settings.daily_digest_hour,
+        id="daily_digest",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        lambda: _safe(send_weekly_digest, settings),
+        "cron",
+        day_of_week=settings.weekly_digest_day,
+        hour=settings.weekly_digest_hour,
+        id="weekly_digest",
+        replace_existing=True,
+    )
+    if settings.retrain_weekly:
+        scheduler.add_job(
+            lambda: _safe(run_retrain, settings),
+            "cron",
+            day_of_week=settings.retrain_day_of_week,
+            hour=settings.retrain_hour,
+            id="weekly_retrain",
+            replace_existing=True,
+        )
 
 
 def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler:

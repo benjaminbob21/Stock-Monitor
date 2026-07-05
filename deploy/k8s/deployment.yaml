@@ -1,0 +1,74 @@
+# Backend = FastAPI + in-process scheduler + DuckDB + LightGBM, all in ONE pod.
+# Because DuckDB has a single writer/owner, this is intentionally:
+#   - replicas: 1
+#   - strategy: Recreate  (never run two pods against the same DB file)
+# Do NOT scale this horizontally.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stock-monitor
+  namespace: stock-monitor
+  labels:
+    app: stock-monitor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: stock-monitor
+  template:
+    metadata:
+      labels:
+        app: stock-monitor
+    spec:
+      containers:
+        - name: api
+          # Replace <acr-name> after you push the image to ACR.
+          image: <acr-name>.azurecr.io/stock-monitor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8137
+          env:
+            - name: RUN_SCHEDULER
+              value: "1"
+            - name: DB_PATH
+              value: /app/data/stock_monitor.duckdb
+            - name: MODEL_PATH
+              value: /app/models/latest.joblib
+          envFrom:
+            - secretRef:
+                name: stock-monitor-env
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: models
+              mountPath: /app/models
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8137
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8137
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: stock-monitor-data
+        - name: models
+          # Models can share the same PVC via subPath, or use emptyDir if you
+          # (re)train in-cluster each run. Sharing the PVC keeps them persistent.
+          persistentVolumeClaim:
+            claimName: stock-monitor-data

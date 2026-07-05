@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function GET(
   _request: Request,
@@ -8,9 +8,8 @@ export async function GET(
 ) {
   const { ticker } = await params;
   try {
-    const upstream = await fetch(
-      `${API_URL}/news/${encodeURIComponent(ticker)}`,
-      { cache: "no-store", headers: backendHeaders() },
+    const upstream = await backendFetch(
+      `/news/${encodeURIComponent(ticker)}`,
     );
     const body = await upstream.json().catch(() => ({ items: [] }));
     return NextResponse.json(body, { status: upstream.status });

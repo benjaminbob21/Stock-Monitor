@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function POST(
   _request: Request,
@@ -8,9 +8,9 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const upstream = await fetch(
-      `${API_URL}/positions/${encodeURIComponent(id)}/sell`,
-      { method: "POST", cache: "no-store", headers: backendHeaders() },
+    const upstream = await backendFetch(
+      `/positions/${encodeURIComponent(id)}/sell`,
+      { method: "POST" },
     );
     const body = await upstream
       .json()

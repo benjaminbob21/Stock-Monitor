@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function GET() {
   try {
-    const upstream = await fetch(`${API_URL}/positions`, {
-      cache: "no-store",
-      headers: backendHeaders(),
-    });
+    const upstream = await backendFetch(`/positions`);
     const body = await upstream.json().catch(() => ({ positions: [] }));
     return NextResponse.json(body, { status: upstream.status });
   } catch {
@@ -25,9 +22,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ detail: "ticker is required" }, { status: 400 });
   }
   try {
-    const upstream = await fetch(
-      `${API_URL}/positions/${encodeURIComponent(ticker)}`,
-      { method: "POST", cache: "no-store", headers: backendHeaders() },
+    const upstream = await backendFetch(
+      `/positions/${encodeURIComponent(ticker)}`,
+      { method: "POST" },
     );
     const body = await upstream
       .json()

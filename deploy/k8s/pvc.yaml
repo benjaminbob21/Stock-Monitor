@@ -1,0 +1,13 @@
+# One PVC for the DuckDB file + trained models. The backend is a SINGLE DuckDB
+# owner, so this volume is mounted by exactly one pod (ReadWriteOnce).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stock-monitor-data
+  namespace: stock-monitor
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

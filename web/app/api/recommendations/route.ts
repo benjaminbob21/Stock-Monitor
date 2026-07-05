@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function GET() {
   try {
-    const upstream = await fetch(`${API_URL}/recommendations`, {
-      cache: "no-store",
-      headers: backendHeaders(),
-    });
+    const upstream = await backendFetch(`/recommendations`);
     const body = await upstream.json().catch(() => ({
       detail: "invalid response from backend",
     }));

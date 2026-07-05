@@ -1,0 +1,10 @@
+# Apply everything except the secret (create that out-of-band, see secret.example.yaml):
+#   kubectl apply -k deploy/k8s
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: stock-monitor
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml

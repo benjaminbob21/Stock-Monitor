@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function GET(
   _request: Request,
@@ -9,9 +9,8 @@ export async function GET(
   const { ticker } = await params;
 
   try {
-    const upstream = await fetch(
-      `${API_URL}/score/${encodeURIComponent(ticker)}`,
-      { cache: "no-store", headers: backendHeaders() },
+    const upstream = await backendFetch(
+      `/score/${encodeURIComponent(ticker)}`,
     );
     const body = await upstream.json().catch(() => ({
       detail: "invalid response from backend",

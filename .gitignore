@@ -5,6 +5,8 @@
 *.key
 *.pem
 secrets/
+# k8s: real secret manifest must never be committed (template is *.example.yaml)
+deploy/k8s/secret.yaml
 
 # ---- Python ----
 __pycache__/

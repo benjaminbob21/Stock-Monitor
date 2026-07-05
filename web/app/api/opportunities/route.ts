@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { API_URL, backendHeaders } from "@/lib/backend";
+import { API_URL, backendFetch } from "@/lib/backend";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = searchParams.get("limit") ?? "20";
   try {
-    const upstream = await fetch(
-      `${API_URL}/opportunities?limit=${encodeURIComponent(limit)}`,
-      { cache: "no-store", headers: backendHeaders() },
+    const upstream = await backendFetch(
+      `/opportunities?limit=${encodeURIComponent(limit)}`,
     );
     const body = await upstream.json().catch(() => ({
       detail: "invalid response from backend",

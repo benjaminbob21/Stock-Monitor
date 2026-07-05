@@ -14,6 +14,7 @@ import type {
   PositionView,
   Recommendation,
   RecommendationsResponse,
+  ScanStatus,
   ScoreResponse,
 } from "@/lib/types";
 
@@ -31,6 +32,9 @@ export default function Home() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
   const [oppNote, setOppNote] = useState<string | null>(null);
+
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recNote, setRecNote] = useState<string | null>(null);
@@ -77,6 +81,46 @@ export default function Home() {
       setPosNote("could not reach the scoring service");
     }
   }, []);
+
+  const runScan = useCallback(async () => {
+    setScanning(true);
+    setScanNote("Refreshing — scoring the whole universe with the latest data…");
+    try {
+      const res = await fetch("/api/scan", { method: "POST" });
+      const body = (await res.json()) as ScanStatus & ApiError;
+      if (!res.ok) {
+        setScanNote(body.detail ?? "could not start a refresh");
+        setScanning(false);
+        return;
+      }
+      // Poll until the backend reports the scan has finished (cap ~15 min).
+      const started = Date.now();
+      while (Date.now() - started < 15 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const sres = await fetch("/api/scan");
+        const status = (await sres.json()) as ScanStatus;
+        if (!status.running) {
+          setScanNote(
+            status.last_error
+              ? `Refresh failed: ${status.last_error}`
+              : `Updated${
+                  status.last_count ? ` — ${status.last_count} names scored` : ""
+                }.`,
+          );
+          break;
+        }
+      }
+      await Promise.all([
+        loadOpportunities(),
+        loadRecommendations(),
+        loadPositions(),
+      ]);
+    } catch {
+      setScanNote("could not reach the scoring service");
+    } finally {
+      setScanning(false);
+    }
+  }, [loadOpportunities, loadRecommendations, loadPositions]);
 
   useEffect(() => {
     loadOpportunities();
@@ -206,12 +250,23 @@ export default function Home() {
 
           <div className="opps-header">
             <h2>Ranked opportunities</h2>
-            <span className="opps-meta">
-              {scannedAt
-                ? `scanned ${new Date(scannedAt).toLocaleString()}`
-                : "not scanned yet"}
-            </span>
+            <div className="opps-actions">
+              <span className="opps-meta">
+                {scannedAt
+                  ? `scanned ${new Date(scannedAt).toLocaleString()}`
+                  : "not scanned yet"}
+              </span>
+              <button
+                type="button"
+                className="refresh-btn"
+                onClick={runScan}
+                disabled={scanning}
+              >
+                {scanning ? "Refreshing…" : "Refresh data"}
+              </button>
+            </div>
           </div>
+          {scanNote && <div className="status">{scanNote}</div>}
           {oppNote && <div className="status">{oppNote}</div>}
           {opps.length > 0 && (
             <OpportunitiesList items={opps} onPick={lookup} />

@@ -290,6 +290,33 @@ body {
   font-size: 12px;
 }
 
+.opps-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refresh-btn {
+  border: 1px solid var(--border, #2a2a2a);
+  background: var(--card, #161616);
+  color: var(--fg, #eaeaea);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  border-color: var(--green, #35c46a);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .opplist {
   display: flex;
   flex-direction: column;

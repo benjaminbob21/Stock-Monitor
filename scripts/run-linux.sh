@@ -37,6 +37,20 @@ if ! grep -qE '^API_SHARED_SECRET=".+"' .env 2>/dev/null; then
   echo "         it in Vercel's STOCK_MONITOR_API_KEY." >&2
 fi
 
+# --- self-clean: make every start idempotent -------------------------------
+# A crashed run (or systemd restart) can leave a stale uvicorn holding the port
+# and a leftover `tailscale funnel` process, which then fails with
+# "listener already exists for port 443". Clear both before we start so this
+# script is safe to run over and over without any manual cleanup.
+echo "clearing any previous backend + tunnel…"
+pkill -f "uvicorn stock_monitor.api.app" 2>/dev/null || true
+for p in $(pgrep -f "tailscale funnel ${PORT}" 2>/dev/null || true); do
+  kill -9 "$p" 2>/dev/null || true
+done
+tailscale funnel "${PORT}" off 2>/dev/null || true
+tailscale serve reset 2>/dev/null || true
+sleep 1
+
 pids=()
 cleanup() {
   echo

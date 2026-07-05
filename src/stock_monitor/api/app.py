@@ -10,14 +10,16 @@ dependency so tests can override it with fakes — no network required.
 
 from __future__ import annotations
 
+import datetime as dt
 import hmac
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
 from stock_monitor import __version__
 from stock_monitor.config import get_settings
@@ -67,6 +69,18 @@ class AppState:
 
 
 _state: AppState | None = None
+
+# Tracks the in-process, on-demand scan triggered from the UI's "Refresh" button.
+# Only one scan runs at a time (the lock), and DuckDB stays a single owner because
+# the scan runs *inside* the API process — no separate `stock-monitor-scan` needed.
+_scan_lock = threading.Lock()
+_scan_status: dict[str, object] = {
+    "running": False,
+    "last_started": None,
+    "last_finished": None,
+    "last_count": None,
+    "last_error": None,
+}
 
 
 def build_state() -> AppState:
@@ -281,6 +295,53 @@ def news(ticker: str, state: StateDep) -> dict[str, object]:
             for i in report.items
         ],
     }
+
+
+def _run_scan_bg(state: AppState) -> None:
+    """Run a universe scan in the API process, then release the lock. Never raises."""
+    from stock_monitor.scan import scan_job
+
+    settings = get_settings()
+    log = logging.getLogger("stock_monitor.api")
+    try:
+        ranked = scan_job(
+            settings,
+            model=state.model,
+            price_provider=state.price_provider,  # type: ignore[arg-type]
+            fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
+        )
+        _scan_status["last_count"] = len(ranked)
+        _scan_status["last_error"] = None
+        log.info("on-demand scan finished: %d scored", len(ranked))
+    except Exception as exc:  # noqa: BLE001 — surface the error via status, don't crash
+        _scan_status["last_error"] = str(exc)
+        log.exception("on-demand scan failed")
+    finally:
+        _scan_status["running"] = False
+        _scan_status["last_finished"] = dt.datetime.now().isoformat()
+        _scan_lock.release()
+
+
+@app.post("/scan")
+def trigger_scan(state: StateDep, background: BackgroundTasks) -> dict[str, object]:
+    """Kick off a fresh universe scan in the background (the UI "Refresh" button).
+
+    Runs in-process so DuckDB stays single-owner. If a scan is already running,
+    this is a no-op that reports the in-flight status instead of starting a second.
+    """
+    _require_ready(state)
+    if not _scan_lock.acquire(blocking=False):
+        return {"status": "already_running", **_scan_status}
+    _scan_status["running"] = True
+    _scan_status["last_started"] = dt.datetime.now().isoformat()
+    background.add_task(_run_scan_bg, state)
+    return {"status": "started", **_scan_status}
+
+
+@app.get("/scan/status")
+def scan_status() -> dict[str, object]:
+    """Poll target for the UI: is a scan running, and how did the last one go?"""
+    return dict(_scan_status)
 
 
 @app.post("/positions/{ticker}")

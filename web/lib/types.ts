@@ -25,6 +25,15 @@ export interface ApiError {
   detail: string;
 }
 
+export interface ScanStatus {
+  status?: "started" | "already_running";
+  running: boolean;
+  last_started: string | null;
+  last_finished: string | null;
+  last_count: number | null;
+  last_error: string | null;
+}
+
 export interface Opportunity {
   rank: number;
   ticker: string;

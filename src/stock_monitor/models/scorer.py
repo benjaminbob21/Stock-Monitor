@@ -29,6 +29,35 @@ from stock_monitor.models.calibration import CalibratedModel, Calibrator, fit_ca
 # (build-plan open item #4). Overridable via config for experiments.
 LABEL_WINDOW_MONTHS = 12
 
+# Base LightGBM hyperparameters for the (long-horizon) primary model.
+_DEFAULT_LGBM_PARAMS: dict = {
+    "n_estimators": 200,
+    "learning_rate": 0.05,
+    "num_leaves": 15,
+    "min_child_samples": 5,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "random_state": 42,
+    "verbose": -1,
+}
+
+# Heavily-regularized overrides for the SHORT-horizon (3-month) model. Short-term
+# relative-vs-benchmark returns are close to noise, so the full-capacity model
+# saturates (raw proba ≈ 1.0 for everything) and calibration then collapses every
+# score to the base rate (~70% flat). Shrinking capacity (shallow trees, more
+# samples-per-leaf, fewer estimators) plus L1/L2 stops the memorization so the
+# short-horizon conviction spreads out and carries real information again.
+SHORT_HORIZON_LGBM_PARAMS: dict = {
+    "n_estimators": 120,
+    "learning_rate": 0.03,
+    "num_leaves": 7,
+    "min_child_samples": 30,
+    "subsample": 0.7,
+    "colsample_bytree": 0.7,
+    "reg_alpha": 0.5,
+    "reg_lambda": 1.0,
+}
+
 # A model the scorer understands: a plain tree classifier (uncalibrated) or a
 # CalibratedModel (base tree + probability calibrator).
 Scoreable = lgb.LGBMClassifier | CalibratedModel
@@ -59,8 +88,13 @@ class ScoreResult:
     calibrated: bool = False
 
 
-def train_model(frame: pd.DataFrame) -> lgb.LGBMClassifier:
-    """Train a small LightGBM classifier on a labelled feature frame."""
+def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClassifier:
+    """Train a small LightGBM classifier on a labelled feature frame.
+
+    ``params`` overrides individual LightGBM hyperparameters on top of the defaults —
+    used to regularize the short-horizon model more heavily (3-month relative returns
+    are mostly noise, so the default-capacity model saturates and memorizes them).
+    """
     if frame.empty or frame["label"].nunique() < 2:
         raise ValueError(
             "Need a labelled frame with both classes present to train. "
@@ -70,22 +104,16 @@ def train_model(frame: pd.DataFrame) -> lgb.LGBMClassifier:
     x = frame[list(FEATURE_COLUMNS)]
     y = frame["label"].astype(int)
 
-    model = lgb.LGBMClassifier(
-        n_estimators=200,
-        learning_rate=0.05,
-        num_leaves=15,
-        min_child_samples=5,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        random_state=42,
-        verbose=-1,
-    )
+    model = lgb.LGBMClassifier(**{**_DEFAULT_LGBM_PARAMS, **(params or {})})
     model.fit(x, y)
     return model
 
 
 def train_calibrated_model(
-    frame: pd.DataFrame, method: str = "sigmoid", cv: int = 3
+    frame: pd.DataFrame,
+    method: str = "sigmoid",
+    cv: int = 3,
+    params: dict | None = None,
 ) -> CalibratedModel:
     """Train the base model and fit a probability calibrator on out-of-fold preds.
 
@@ -93,8 +121,11 @@ def train_calibrated_model(
     corrects genuine over/under-confidence rather than memorising the training fit.
     If there isn't enough data to cross-validate, the calibrator is omitted and the
     model degrades gracefully to uncalibrated (honest, not silently wrong).
+
+    ``params`` is forwarded to the base model so callers can regularize a specific
+    horizon (the out-of-fold model inherits the same params via ``get_params``).
     """
-    base = train_model(frame)
+    base = train_model(frame, params=params)
     x = frame[list(FEATURE_COLUMNS)]
     y = frame["label"].astype(int)
 

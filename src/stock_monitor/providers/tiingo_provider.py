@@ -59,19 +59,20 @@ class TiingoProvider(PriceProvider):
             return pd.DataFrame(columns=list(PRICE_COLUMNS))
 
         df = pd.DataFrame(rows)
-        # Prefer the split/dividend-adjusted columns so returns are comparable over time.
-        rename = {
+        # Tiingo returns BOTH raw (open/high/low/close/volume) and split/dividend-adjusted
+        # (adjOpen/...) columns. Select the SOURCE columns first, THEN rename — otherwise
+        # renaming adjOpen->open collides with the existing raw "open" and yields duplicate
+        # columns. Prefer adjusted so returns are comparable across splits/dividends.
+        adj = {
             "adjOpen": "open",
             "adjHigh": "high",
             "adjLow": "low",
             "adjClose": "close",
             "adjVolume": "volume",
         }
-        missing = [c for c in rename if c not in df.columns]
-        if missing:  # fall back to raw columns if adjusted ones are absent
-            rename = {"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"}
-
-        df = df.rename(columns=rename)[["date", *PRICE_COLUMNS]].copy()
+        raw = {c: c for c in PRICE_COLUMNS}
+        source = adj if all(c in df.columns for c in adj) else raw
+        df = df[["date", *source.keys()]].rename(columns=source)
         df.index = pd.to_datetime(df["date"]).dt.tz_localize(None)
         df.index.name = "date"
         df = df.drop(columns=["date"])

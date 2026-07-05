@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,31 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_placeholder_uses_default(cls, data: object) -> object:
+        """Treat empty `.env` placeholders as "unset" so the field default applies.
+
+        Lets users pre-stage blank keys (e.g. ``OPENAI_API_KEY=`` /
+        ``LLM_ANALYST_ENABLED=``) and fill them in later without breaking startup.
+        Blank strings are dropped only for non-``str`` fields (bool/int/float);
+        string fields keep ``""`` as their intended "disabled" sentinel.
+        """
+        if not isinstance(data, dict):
+            return data
+        cleaned: dict[object, object] = {}
+        for key, value in data.items():
+            field = cls.model_fields.get(str(key).lower())
+            if (
+                field is not None
+                and field.annotation is not str
+                and isinstance(value, str)
+                and value.strip() == ""
+            ):
+                continue  # skip → pydantic uses the field's declared default
+            cleaned[key] = value
+        return cleaned
 
     # SEC EDGAR requires a descriptive User-Agent with contact info (fair-access policy).
     sec_user_agent: str = "Stock-Monitor/0.1 (you@example.com)"

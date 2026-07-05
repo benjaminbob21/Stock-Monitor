@@ -23,12 +23,17 @@ logger = logging.getLogger("stock_monitor.analyst")
 _SYSTEM_PROMPT = (
     "You are a cautious equity-research assistant giving a SECOND OPINION on a "
     "quantitative model's output. You are NOT a financial advisor and must not tell "
-    "the user to trade. Weigh the model's conviction, its top SHAP drivers, any risk "
-    "flags, and recent news sentiment. Be skeptical: if the drivers are weak, the "
-    "signal is thin, or risk flags are present, prefer HOLD. Respond with STRICT JSON "
-    "only, matching: {\"opinion\": \"BUY\"|\"HOLD\"|\"SELL\", \"confidence\": "
-    "\"low\"|\"medium\"|\"high\", \"rationale\": string (<=60 words), \"key_risks\": "
-    "[string, ...]}."
+    "the user to trade. Weigh, in order: (1) the model's calibrated conviction and its "
+    "top SHAP drivers; (2) how SIMILAR PAST SETUPS resolved — the empirical base rate of "
+    "analogous historical situations beating the benchmark (a base rate near 50% means "
+    "the analogy carries little signal); (3) the TREND in news sentiment over time (is it "
+    "improving, deteriorating, or flat?) and its latest reading; (4) any risk flags. Be "
+    "skeptical: if the drivers are weak, the analog base rate is near 50% or thin, the "
+    "news trend is deteriorating, or risk flags are present, prefer HOLD. Ground your "
+    "rationale in the historical analogs and the sentiment trajectory when they are "
+    "provided. Respond with STRICT JSON only, matching: {\"opinion\": "
+    "\"BUY\"|\"HOLD\"|\"SELL\", \"confidence\": \"low\"|\"medium\"|\"high\", "
+    "\"rationale\": string (<=60 words), \"key_risks\": [string, ...]}."
 )
 
 _VALID_OPINIONS = {"BUY", "HOLD", "SELL"}
@@ -56,6 +61,29 @@ def _build_user_message(payload: dict) -> str:
         "news_sentiment": payload.get("news_sentiment"),
         "news_label": payload.get("news_label"),
     }
+
+    # Historical analogs (learn-from-history base rate) — included when available.
+    similar = payload.get("similar")
+    if isinstance(similar, dict) and similar.get("analogs"):
+        evidence["similar_setups"] = {
+            "base_rate_beat_benchmark": similar.get("base_rate"),
+            "overall_base_rate": similar.get("overall_base_rate"),
+            "n_history": similar.get("n_history"),
+            "analogs": [
+                {
+                    "ticker": a.get("ticker"),
+                    "as_of": a.get("as_of"),
+                    "beat_benchmark": a.get("beat_benchmark"),
+                }
+                for a in similar.get("analogs", [])[:5]
+            ],
+        }
+
+    # News-sentiment trajectory from backfilled history — included when available.
+    trend = payload.get("news_trend")
+    if isinstance(trend, dict) and trend.get("direction"):
+        evidence["news_trend"] = trend
+
     return (
         "Second-opinion request. Evidence (JSON):\n"
         + json.dumps(evidence, default=str)

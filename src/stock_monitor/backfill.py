@@ -22,7 +22,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from stock_monitor.config import Settings
+from stock_monitor.config import Settings, get_settings
 from stock_monitor.sentiment import NewsItem, SentimentAnalyzer, get_sentiment_analyzer
 from stock_monitor.storage.db import Storage
 
@@ -149,3 +149,50 @@ def backfill_news(
         if not frame.empty:
             written += storage.upsert_news_sentiment(frame)
     return written
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: one-time historical news backfill into the ``news_sentiment`` table.
+
+    Run with ``stock-monitor-backfill``. Uses the EODHD news API (needs ``EODHD_API_KEY``);
+    on the free tier you get roughly the past year, on a paid month the full
+    ``NEWS_BACKFILL_YEARS`` window. The scored daily sentiment is stored so training can
+    finally learn from news history — this is a snapshot you keep forever.
+    """
+    import argparse
+
+    from stock_monitor.providers.eodhd_provider import EODHDNewsProvider
+    from stock_monitor.universe import get_universe
+
+    parser = argparse.ArgumentParser(description="Stock-Monitor historical news backfill")
+    parser.add_argument(
+        "-w", "--watchlist", nargs="+", default=None,
+        help="Tickers to backfill (default: the scan universe).",
+    )
+    args = parser.parse_args(argv)
+
+    settings = get_settings()
+    if not settings.eodhd_api_key:
+        print("EODHD_API_KEY is not set — cannot backfill news.")
+        return 1
+
+    tickers = [t.upper() for t in (args.watchlist or get_universe())]
+    provider = EODHDNewsProvider(settings.eodhd_api_key)
+    analyzer = get_sentiment_analyzer(settings)
+
+    print(
+        f"Backfilling up to {settings.news_backfill_years}y of news for "
+        f"{len(tickers)} tickers via {provider.name} (analyzer={analyzer.name}) ..."
+    )
+    with Storage(settings.db_path) as store:
+        written = backfill_news(settings, provider, store, tickers, analyzer=analyzer)
+        total = store.count("news_sentiment")
+    print(
+        f"Backfill complete: {written} daily rows written this run; "
+        f"news_sentiment now holds {total} rows total."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

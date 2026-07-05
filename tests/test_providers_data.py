@@ -30,14 +30,18 @@ class _FakeResp:
 
 
 def test_tiingo_parses_adjusted_ohlcv(monkeypatch) -> None:
+    # Real Tiingo payloads include BOTH raw (open/high/...) AND adjusted (adjOpen/...)
+    # columns; the provider must select the adjusted ones without duplicating columns.
     payload = [
         {
             "date": "2024-01-02T00:00:00.000Z",
+            "open": 9.9, "high": 10.9, "low": 9.4, "close": 10.4, "volume": 900,
             "adjOpen": 10.0, "adjHigh": 11.0, "adjLow": 9.5,
             "adjClose": 10.5, "adjVolume": 1000,
         },
         {
             "date": "2024-01-03T00:00:00.000Z",
+            "open": 10.4, "high": 11.9, "low": 9.9, "close": 11.4, "volume": 1900,
             "adjOpen": 10.5, "adjHigh": 12.0, "adjLow": 10.0,
             "adjClose": 11.5, "adjVolume": 2000,
         },
@@ -47,9 +51,10 @@ def test_tiingo_parses_adjusted_ohlcv(monkeypatch) -> None:
     )
     df = TiingoProvider("key").get_prices("AAPL", dt.date(2024, 1, 1), dt.date(2024, 1, 4))
 
-    assert list(df.columns) == list(PRICE_COLUMNS)
+    assert list(df.columns) == list(PRICE_COLUMNS)  # exactly 5, no duplicates
+    assert df.shape == (2, 5)
     assert df.index.name == "date"
-    assert df.iloc[0]["close"] == 10.5
+    assert df.iloc[0]["close"] == 10.5  # adjusted, not the raw 10.4
     assert len(df) == 2
 
 

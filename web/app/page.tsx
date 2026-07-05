@@ -92,7 +92,9 @@ export default function Home() {
 
   const runScan = useCallback(async () => {
     setScanning(true);
-    setScanNote("Refreshing — scoring the whole universe with the latest data…");
+    setScanNote(
+      "Refreshing — scoring the whole universe with the latest data…",
+    );
     try {
       const res = await fetch("/api/scan", { method: "POST" });
       const body = (await res.json()) as ScanStatus & ApiError;
@@ -112,7 +114,9 @@ export default function Home() {
             status.last_error
               ? `Refresh failed: ${status.last_error}`
               : `Updated${
-                  status.last_count ? ` — ${status.last_count} names scored` : ""
+                  status.last_count
+                    ? ` — ${status.last_count} names scored`
+                    : ""
                 }.`,
           );
           break;
@@ -280,7 +284,10 @@ export default function Home() {
                 >
                   <div className="recrow">
                     <span className="oppticker">{r.ticker}</span>
-                    <span className="oppscore" style={{ color: "var(--green)" }}>
+                    <span
+                      className="oppscore"
+                      style={{ color: "var(--green)" }}
+                    >
                       {r.capped_conviction}
                       <small>/100</small>
                     </span>

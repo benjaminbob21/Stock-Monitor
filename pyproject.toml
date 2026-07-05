@@ -42,6 +42,7 @@ stock-monitor-validate = "stock_monitor.evaluation:main"
 stock-monitor-backtest = "stock_monitor.backtest:main"
 stock-monitor-scan = "stock_monitor.scan:main"
 stock-monitor-scheduler = "stock_monitor.scheduler:main"
+stock-monitor-backfill = "stock_monitor.backfill:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

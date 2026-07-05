@@ -362,12 +362,91 @@ def paper_summary_endpoint(state: StateDep) -> dict[str, object]:
     return {"summary": summary, "note": note}
 
 
+def _news_trend_from_history(sentiment: object) -> dict[str, object] | None:
+    """Summarize backfilled news sentiment into a plain trajectory (recent vs prior).
+
+    Returns direction (improving/deteriorating/flat), the recent/prior 90-day means, the
+    latest reading, and coverage. ``None`` when there is no stored sentiment history.
+    """
+    import pandas as pd
+
+    if sentiment is None or getattr(sentiment, "empty", True):
+        return None
+    d = sentiment.copy()
+    d["date"] = pd.to_datetime(d["date"])
+    d = d.sort_values("date")
+    latest_date = d["date"].max()
+    recent = d[d["date"] >= latest_date - pd.Timedelta(days=90)]
+    prior = d[
+        (d["date"] < latest_date - pd.Timedelta(days=90))
+        & (d["date"] >= latest_date - pd.Timedelta(days=180))
+    ]
+    if recent.empty:
+        return None
+    recent_mean = float(recent["sentiment"].mean())
+    prior_mean = float(prior["sentiment"].mean()) if not prior.empty else None
+    if prior_mean is None:
+        direction, delta = "flat", 0.0
+    else:
+        delta = recent_mean - prior_mean
+        direction = (
+            "improving" if delta > 0.05 else "deteriorating" if delta < -0.05 else "flat"
+        )
+    return {
+        "direction": direction,
+        "recent_90d_mean": round(recent_mean, 3),
+        "prior_90d_mean": round(prior_mean, 3) if prior_mean is not None else None,
+        "latest": round(float(d.iloc[-1]["sentiment"]), 3),
+        "delta": round(delta, 3),
+        "days_covered": int(d["date"].dt.date.nunique()),
+        "backend": str(d.iloc[-1].get("backend", "")),
+    }
+
+
+def _analyst_history_evidence(ticker: str, state: AppState) -> dict[str, object]:
+    """Best-effort learn-from-history evidence for the AI analyst.
+
+    Builds today's PIT feature row, finds similar past setups (empirical base rate), and
+    summarizes the backfilled news-sentiment trend. Never raises — enrichment is optional
+    and the second opinion still stands without it.
+    """
+    out: dict[str, object] = {}
+    if not state.db_path:
+        return out
+    try:
+        end = dt.date.today()
+        start = end - dt.timedelta(days=365 * 8)
+        prices = state.price_provider.get_prices(ticker, start, end)  # type: ignore[attr-defined]
+        if prices.empty:
+            return out
+        facts = state.fundamental_provider.get_fundamentals(ticker)  # type: ignore[attr-defined]
+        as_of = prices.index[-1].date()
+        row = build_feature_row(ticker, prices, facts, as_of)
+        if row is None:
+            return out
+        from stock_monitor.similar import find_similar_setups
+
+        with Storage(state.db_path) as store:
+            history = store.read_features()
+            sentiment = store.read_news_sentiment(ticker.upper())
+        out["similar"] = find_similar_setups(row, history, k=5)
+        trend = _news_trend_from_history(sentiment)
+        if trend is not None:
+            out["news_trend"] = trend
+    except Exception:  # noqa: BLE001 — enrichment is best-effort, never fatal
+        logging.getLogger("stock_monitor.api").debug(
+            "analyst enrichment failed for %s", ticker, exc_info=True
+        )
+    return out
+
+
 @app.get("/analyst/{ticker}")
 def analyst(ticker: str, state: StateDep) -> dict[str, object]:
     """Optional LLM second opinion on a ticker (opt-in; disabled by default, has a cost).
 
-    Scores the ticker with the primary model, attaches recent news sentiment, and asks
-    the configured LLM for an independent BUY/HOLD/SELL read. The model score is always
+    Scores the ticker with the primary model, attaches recent news sentiment, the
+    learn-from-history analog base rate, and the news-sentiment trend, then asks the
+    configured LLM for an independent BUY/HOLD/SELL read. The model score is always
     the signal of record — this is a second opinion for a human to weigh.
     """
     from stock_monitor.analyst import second_opinion
@@ -407,6 +486,9 @@ def analyst(ticker: str, state: StateDep) -> dict[str, object]:
         )
         payload["news_sentiment"] = round(report.score, 3)
         payload["news_label"] = report.label
+
+    # Learn-from-history evidence: analog base rate + news-sentiment trend (best-effort).
+    payload.update(_analyst_history_evidence(ticker, state))
 
     opinion = second_opinion(payload, settings)
     return {

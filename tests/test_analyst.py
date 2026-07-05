@@ -89,5 +89,51 @@ def test_second_opinion_rejects_invalid_opinion(monkeypatch) -> None:
     assert second_opinion(_payload(), settings) is None
 
 
+def test_second_opinion_includes_history_evidence(monkeypatch) -> None:
+    """When present, historical analogs + news trend are passed to the LLM."""
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002
+        captured["body"] = json
+        return _FakeResp(_json_dumps({"opinion": "HOLD", "confidence": "low"}))
+
+    import requests
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    payload = _payload()
+    payload["similar"] = {
+        "base_rate": 0.6,
+        "overall_base_rate": 0.5,
+        "n_history": 120,
+        "analogs": [
+            {"ticker": "BBB", "as_of": "2020-01-02", "beat_benchmark": True},
+        ],
+    }
+    payload["news_trend"] = {
+        "direction": "improving",
+        "recent_90d_mean": 0.2,
+        "prior_90d_mean": 0.05,
+        "latest": 0.3,
+    }
+    settings = Settings(llm_analyst_enabled=True, openai_api_key="sk-test")
+    result = second_opinion(payload, settings)
+    assert result is not None
+    user_msg = captured["body"]["messages"][1]["content"]
+    assert "similar_setups" in user_msg
+    assert "base_rate_beat_benchmark" in user_msg
+    assert "news_trend" in user_msg
+    assert "improving" in user_msg
+
+
+def test_blank_env_placeholder_uses_default(monkeypatch) -> None:
+    """Blank `.env` placeholders (e.g. LLM_ANALYST_ENABLED=) fall back to defaults."""
+    monkeypatch.setenv("LLM_ANALYST_ENABLED", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.llm_analyst_enabled is False  # blank bool -> default, not a crash
+    assert settings.openai_api_key == ""  # blank str stays the disabled sentinel
+
+
 def _json_dumps(obj: dict) -> str:
     return json.dumps(obj)

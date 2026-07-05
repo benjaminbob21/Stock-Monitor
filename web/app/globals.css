@@ -418,7 +418,9 @@ body.sheet-open {
   padding: 6px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.15s ease, opacity 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .refresh-btn:hover:not(:disabled) {

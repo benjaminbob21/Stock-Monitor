@@ -19,10 +19,10 @@ from stock_monitor.config import Settings, get_settings
 from stock_monitor.features.builder import FEATURE_COLUMNS, build_training_frame
 from stock_monitor.features.schema import ValidationReport, validate_features
 from stock_monitor.models.registry import compute_model_version, save_model
-from stock_monitor.models.scorer import train_calibrated_model
+from stock_monitor.models.scorer import SHORT_HORIZON_LGBM_PARAMS, train_calibrated_model
+from stock_monitor.providers import get_price_provider
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.providers.edgar_provider import EdgarProvider
-from stock_monitor.providers.yfinance_provider import YFinanceProvider
 from stock_monitor.storage.db import Storage
 
 DEFAULT_WATCHLIST: tuple[str, ...] = ("AAPL", "MSFT", "NVDA", "JPM", "XOM", "KO")
@@ -143,7 +143,7 @@ def run_training(
 ) -> TrainingResult:
     """Run the full pipeline and return a summary. Providers are injectable for tests."""
     settings = settings or get_settings()
-    price_provider = price_provider or YFinanceProvider()
+    price_provider = price_provider or get_price_provider(settings)
     fundamental_provider = fundamental_provider or EdgarProvider()
 
     long_h = settings.label_window_months
@@ -166,12 +166,15 @@ def run_training(
     save_model(model, settings.model_path)
 
     # Secondary short-horizon model (near-term read). Best-effort: if its data is thin
-    # or single-class, skip it — the primary model still ships.
+    # or single-class, skip it — the primary model still ships. Trained with heavier
+    # regularization so the 3-month signal stops saturating and flattening to base rate.
     short_pooled = frames.get(short_h, pd.DataFrame())
     if not short_pooled.empty:
         valid_short, _, _ = validate_features(short_pooled)
         try:
-            short_model = train_calibrated_model(valid_short)
+            short_model = train_calibrated_model(
+                valid_short, params=SHORT_HORIZON_LGBM_PARAMS
+            )
             save_model(short_model, settings.model_path_short)
         except ValueError:
             pass

@@ -287,6 +287,69 @@ hand off from one laptop to the other.
 
 ---
 
+## 12. FinBERT via a Multipass Ubuntu VM (same environment on both Macs)
+
+FinBERT needs **PyTorch**, and PyTorch **has no macOS-Intel (x86-64) wheels** (dropped after
+torch 2.2.x). So on the Intel Mac, `SENTIMENT_BACKEND=finbert` can't install natively and the
+app silently falls back to VADER. The fix is to run the backend inside a **Linux** environment,
+where torch installs cleanly. A lightweight **Multipass** Ubuntu VM gives you that without Docker.
+
+**Do this on BOTH Macs** (Intel → amd64 VM, Apple Silicon → arm64 VM — torch has wheels for both)
+and you get **one identical environment everywhere**: FinBERT on each, fully interchangeable
+backends, and a close mirror of a future Linux prod box. Only one backend runs at a time regardless.
+
+### Create the VM (on each Mac host)
+
+```bash
+brew install --cask multipass
+multipass launch 24.04 --name stockvm --cpus 2 --memory 8G --disk 20G
+multipass shell stockvm            # now you're in an Ubuntu x86-64 terminal
+```
+
+### Set up the app (inside the VM)
+
+```bash
+sudo apt update
+sudo apt install -y python3.12-venv build-essential libgomp1 git curl
+git clone https://github.com/benjaminbob21/Stock-Monitor.git
+cd Stock-Monitor
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -U pip
+pip install -e ".[dev,finbert]"    # torch + transformers install fine on Linux x86-64
+cp .env.example .env
+#   set SENTIMENT_BACKEND=finbert
+#   set API_SHARED_SECRET to the SAME value as your other machine
+#   set SEC_USER_AGENT, TELEGRAM_* as usual
+```
+
+### Join Tailscale (inside the VM — it becomes its own node)
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up                          # sign in to the SAME tailnet
+sudo tailscale set --operator="$USER"      # run funnel without sudo
+```
+
+The VM gets its **own** MagicDNS name (e.g. `stockvm.<tailnet>.ts.net`) → that's its Funnel URL.
+
+### Run it (inside the VM)
+
+```bash
+./scripts/run-linux.sh
+# prints "Available on the internet: https://stockvm.<tailnet>.ts.net"
+```
+
+`run-linux.sh` is the Linux twin of `run-local.sh` (no macOS `caffeinate`). Keeping the **Mac
+host** awake is still the host's job (lid open + power).
+
+### Wire it up
+
+- Add the VM's Funnel URL to Vercel's comma-separated `STOCK_MONITOR_API_URL`.
+- For data sync, the VM is the remote: `./scripts/sync-data.sh stockvm push|pull` (Tailscale SSH
+  works VM-to-machine once both are on the tailnet).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

@@ -3,6 +3,7 @@
 import { AnalystCard } from "@/components/AnalystCard";
 import { ConvictionCard } from "@/components/ConvictionCard";
 import { NewsPanel } from "@/components/NewsPanel";
+import { PriceChart } from "@/components/PriceChart";
 import type { AnalystResponse, NewsResponse, ScoreResponse } from "@/lib/types";
 
 export function StockDetailSheet({
@@ -78,6 +79,7 @@ export function StockDetailSheet({
         )}
         {error && <div className="status error">{error}</div>}
         {data && <ConvictionCard data={data} />}
+        {data && ticker && <PriceChart ticker={ticker} />}
         {data && <AnalystCard analyst={analyst} />}
         {news && <NewsPanel news={news} />}
       </div>

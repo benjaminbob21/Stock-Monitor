@@ -1515,3 +1515,124 @@ body.sheet-open {
   transform-origin: right center;
   background: var(--red);
 }
+
+/* ---------------------------------------------------------------- price chart */
+.chart-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 14px 12px;
+  margin-top: 18px;
+  box-shadow: var(--shadow-md);
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.chart-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chart-last {
+  font-family: var(--font-jbmono), ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.chart-last.muted {
+  color: var(--muted);
+}
+
+.chart-chg {
+  font-family: var(--font-jbmono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chart-chg.up {
+  color: var(--green);
+}
+
+.chart-chg.down {
+  color: var(--red);
+}
+
+.chart-ranges {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.chart-range {
+  min-width: 38px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chart-range:hover {
+  color: var(--text);
+}
+
+.chart-range.active {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+
+.chart-canvas {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.2s ease;
+}
+
+.chart-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: center;
+  padding: 0 16px;
+}
+
+.chart-state.error {
+  color: var(--red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-canvas {
+    transition: none;
+  }
+}
+

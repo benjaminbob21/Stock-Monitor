@@ -14,6 +14,7 @@ import datetime as dt
 import hmac
 import logging
 import threading
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -82,6 +83,14 @@ _scan_status: dict[str, object] = {
     "last_count": None,
     "last_error": None,
 }
+
+# Cache EOD price bars per (ticker, days) so the candlestick chart never hammers
+# the price provider's free-tier rate limit. Bars only change once per day (after
+# market close), so a modest in-process TTL serves the UI from memory and makes at
+# most a handful of upstream calls per ticker per hour.
+_PRICE_CACHE: dict[str, tuple[float, list[dict[str, object]]]] = {}
+_PRICE_CACHE_LOCK = threading.Lock()
+_PRICE_CACHE_TTL_SECONDS = 3600.0
 
 
 def build_state() -> AppState:
@@ -296,6 +305,59 @@ def news(ticker: str, state: StateDep) -> dict[str, object]:
             for i in report.items
         ],
     }
+
+
+@app.get("/prices/{ticker}")
+def prices(ticker: str, state: StateDep, days: int = 180) -> dict[str, object]:
+    """Adjusted daily OHLCV bars for a ticker (candlestick chart data).
+
+    Cached in-process per (ticker, days) so the chart never hammers the price
+    provider's free-tier rate limit — EOD bars change at most once per day, so we
+    serve repeat views from memory and make at most a handful of upstream calls.
+    """
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=422, detail="ticker required")
+    days = max(20, min(int(days), 365 * 5))
+    key = f"{ticker}:{days}"
+    now = time.monotonic()
+    with _PRICE_CACHE_LOCK:
+        hit = _PRICE_CACHE.get(key)
+        if hit is not None and now - hit[0] < _PRICE_CACHE_TTL_SECONDS:
+            return {"ticker": ticker, "days": days, "cached": True, "bars": hit[1]}
+
+    end = dt.date.today()
+    start = end - dt.timedelta(days=days)
+    try:
+        frame = state.price_provider.get_prices(ticker, start, end)  # type: ignore[attr-defined]
+    except Exception as exc:  # noqa: BLE001 — upstream/network failure surfaces as 502
+        raise HTTPException(
+            status_code=502, detail=f"price data unavailable for {ticker}"
+        ) from exc
+
+    bars: list[dict[str, object]] = []
+    if frame is not None and not frame.empty:
+        for idx, row in frame.iterrows():
+            try:
+                vol = float(row["volume"])
+                bars.append(
+                    {
+                        "time": idx.date().isoformat(),
+                        "open": round(float(row["open"]), 4),
+                        "high": round(float(row["high"]), 4),
+                        "low": round(float(row["low"]), 4),
+                        "close": round(float(row["close"]), 4),
+                        "volume": int(vol) if vol == vol else 0,
+                    }
+                )
+            except (TypeError, ValueError, KeyError):
+                continue
+    if not bars:
+        raise HTTPException(status_code=404, detail=f"no price data for {ticker}")
+
+    with _PRICE_CACHE_LOCK:
+        _PRICE_CACHE[key] = (now, bars)
+    return {"ticker": ticker, "days": days, "cached": False, "bars": bars}
 
 
 def _run_scan_bg(state: AppState) -> None:

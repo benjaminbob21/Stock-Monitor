@@ -166,6 +166,31 @@ def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
     return int(round(proba * 100))
 
 
+def calibrated_dynamic_range(
+    model: Scoreable, *, lo: float = 0.2, hi: float = 0.8, n: int = 13
+) -> float:
+    """Peak-to-peak spread (0-100) of the calibrated output over a raw-proba sweep.
+
+    A near-zero range means the calibrator has almost no slope — the model can't
+    tell setups apart, so every conviction collapses to the base rate. Uncalibrated
+    models pass raw through and are treated as full range (nothing to flatten).
+    """
+    _, calibrator = _unwrap(model)
+    if calibrator is None:
+        return 100.0
+    grid = np.linspace(lo, hi, n)
+    out = np.asarray([float(calibrator.transform([float(p)])[0]) for p in grid])
+    return float(out.max() - out.min()) * 100.0
+
+
+def is_low_signal(model: Scoreable, *, min_range: float = 5.0) -> bool:
+    """True when calibrated conviction spans < ``min_range`` points across the
+    plausible raw-proba range — i.e. the horizon carries no usable cross-sectional
+    signal and any per-name "conviction" would be a misleading flat number.
+    """
+    return calibrated_dynamic_range(model) < min_range
+
+
 def _positive_class_shap(explainer: shap.TreeExplainer, x: pd.DataFrame) -> np.ndarray:
     """Return a 1-D SHAP vector for the positive class of a single row."""
     with warnings.catch_warnings():

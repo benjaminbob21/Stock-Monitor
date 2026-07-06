@@ -15,6 +15,7 @@ from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
 from stock_monitor.models.scorer import (
     Scoreable,
+    is_low_signal,
     predict_conviction,
     recommendation_band,
     score_row,
@@ -166,10 +167,22 @@ def score_ticker(
 
     conviction_3m: int | None = None
     recommendation_3m: str | None = None
+    near_term_note: str | None = None
     if short_model is not None:
-        raw_3m = predict_conviction(short_model, row)
-        conviction_3m, _ = apply_risk_caps(raw_3m, row, price, days_to_earnings)
-        recommendation_3m = recommendation_band(conviction_3m)
+        if is_low_signal(short_model):
+            # Honest degradation: the 3-month model can't differentiate names right
+            # now, so we show a neutral read instead of a misleading flat per-stock
+            # "conviction" that would imply a signal that isn't there.
+            recommendation_3m = "no clear near-term signal"
+            near_term_note = (
+                "Short-term direction isn't reliably predictable from the current "
+                "features, so the near-term read is neutral rather than a false "
+                "per-stock signal. Lean on the 12-month conviction."
+            )
+        else:
+            raw_3m = predict_conviction(short_model, row)
+            conviction_3m, _ = apply_risk_caps(raw_3m, row, price, days_to_earnings)
+            recommendation_3m = recommendation_band(conviction_3m)
 
     if storage is not None:
         storage.upsert_features(valid)
@@ -200,6 +213,7 @@ def score_ticker(
         # Near-term (3-month) read alongside the 12-month conviction, when available.
         "conviction_3m": conviction_3m,
         "recommendation_3m": recommendation_3m,
+        "near_term_note": near_term_note,
         "disclaimer": _GUARDRAIL
         + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
     }

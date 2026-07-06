@@ -65,7 +65,12 @@ class Settings(BaseSettings):
     model_path_short: str = "models/latest_3m.joblib"
     label_window_months_short: int = 3
 
-    # MLflow tracking (local file store; gitignored).
+    # How many years of price history to pull when TRAINING. Deeper = more labelled
+    # rows + a richer similar-setups base rate. Tiingo's free tier already returns
+    # ~35 years for US large-caps, so this costs nothing. (Fundamentals coverage from
+    # SEC EDGAR effectively bounds usable rows to the XBRL era, ~2009+.)
+    training_history_years: int = 30
+
     mlflow_tracking_uri: str = "file:./mlruns"
     mlflow_experiment: str = "stock-monitor"
 

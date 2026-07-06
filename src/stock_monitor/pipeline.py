@@ -46,10 +46,11 @@ def assemble_training_frame(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     label_window_months: int,
+    history_years: int = HISTORY_YEARS,
 ) -> pd.DataFrame:
     """Fetch prices + PIT fundamentals per ticker and pool their labelled frames."""
     end = dt.date.today()
-    start = end - dt.timedelta(days=365 * HISTORY_YEARS)
+    start = end - dt.timedelta(days=365 * history_years)
 
     benchmark = price_provider.get_prices(BENCHMARK, start, end)
     if benchmark.empty:
@@ -77,10 +78,11 @@ def assemble_training_frames(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     horizons: list[int],
+    history_years: int = HISTORY_YEARS,
 ) -> dict[int, pd.DataFrame]:
     """Fetch each ticker once and build a labelled frame per horizon (no double fetch)."""
     end = dt.date.today()
-    start = end - dt.timedelta(days=365 * HISTORY_YEARS)
+    start = end - dt.timedelta(days=365 * history_years)
 
     benchmark = price_provider.get_prices(BENCHMARK, start, end)
     if benchmark.empty:
@@ -149,7 +151,11 @@ def run_training(
     long_h = settings.label_window_months
     short_h = settings.label_window_months_short
     frames = assemble_training_frames(
-        watchlist, price_provider, fundamental_provider, [long_h, short_h]
+        watchlist,
+        price_provider,
+        fundamental_provider,
+        [long_h, short_h],
+        history_years=settings.training_history_years,
     )
     pooled = frames.get(long_h, pd.DataFrame())
     if pooled.empty:

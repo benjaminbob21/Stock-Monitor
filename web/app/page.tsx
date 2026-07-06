@@ -199,31 +199,38 @@ export default function Home() {
     };
   }, [sheetOpen]);
 
-  const addPosition = useCallback(async () => {
-    const clean = addTicker.trim().toUpperCase();
-    if (!clean) return;
-    setAddBusy(true);
-    setPosNote(null);
-    try {
-      const res = await fetch(
-        `/api/positions?ticker=${encodeURIComponent(clean)}`,
-        {
-          method: "POST",
-        },
-      );
-      if (!res.ok) {
-        const body = (await res.json()) as ApiError;
-        setPosNote(body.detail ?? `could not add ${clean}`);
-      } else {
-        setAddTicker("");
+  const addPositionByTicker = useCallback(
+    async (symbol: string) => {
+      const clean = symbol.trim().toUpperCase();
+      if (!clean) return false;
+      setAddBusy(true);
+      setPosNote(null);
+      try {
+        const res = await fetch(
+          `/api/positions?ticker=${encodeURIComponent(clean)}`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          const body = (await res.json()) as ApiError;
+          setPosNote(body.detail ?? `could not add ${clean}`);
+          return false;
+        }
         await loadPositions();
+        return true;
+      } catch {
+        setPosNote("could not reach the scoring service");
+        return false;
+      } finally {
+        setAddBusy(false);
       }
-    } catch {
-      setPosNote("could not reach the scoring service");
-    } finally {
-      setAddBusy(false);
-    }
-  }, [addTicker, loadPositions]);
+    },
+    [loadPositions],
+  );
+
+  const addPosition = useCallback(async () => {
+    const ok = await addPositionByTicker(addTicker);
+    if (ok) setAddTicker("");
+  }, [addTicker, addPositionByTicker]);
 
   const sellPosition = useCallback(
     async (id: string) => {
@@ -269,7 +276,11 @@ export default function Home() {
                 ? `scanned ${new Date(scannedAt).toLocaleString()}`
                 : "not scanned yet"}
             </p>
-            {scanNote && <div className="status">{scanNote}</div>}
+            {scanNote && (
+              <div className="status" role="status" aria-live="polite">
+                {scanNote}
+              </div>
+            )}
             {oppNote && <div className="status">{oppNote}</div>}
             {opps.length > 0 && (
               <OpportunitiesList items={opps} onPick={lookup} />
@@ -413,6 +424,11 @@ export default function Home() {
           loading={loading}
           error={error}
           onClose={closeSheet}
+          onAdd={() => addPositionByTicker(detailTicker)}
+          adding={addBusy}
+          tracked={positions.some(
+            (p) => p.ticker === detailTicker && p.status === "open",
+          )}
         />
       )}
     </div>

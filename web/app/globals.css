@@ -1,16 +1,69 @@
+/* ==========================================================================
+   Stock-Monitor — design system
+   A premium, terminal-grade dark theme for a high-trust financial tool.
+   Token names from the original palette are preserved (--green, --red,
+   --accent, --panel …) so component inline styles keep working; only their
+   values and the surrounding system are upgraded.
+   ========================================================================== */
 :root {
-  --bg: #0b1020;
-  --panel: #141a2e;
-  --panel-2: #1b2340;
-  --text: #e6e9f2;
-  --muted: #9aa3bd;
-  --border: #26304f;
-  --green: #34d399;
-  --teal: #2dd4bf;
-  --gray: #94a3b8;
-  --orange: #fbbf24;
-  --red: #f87171;
-  --accent: #6366f1;
+  /* ---- Surfaces (deep slate, layered for depth) ---- */
+  --bg: #080b13;
+  --bg-elevated: #0d111c;
+  --panel: #121826;
+  --panel-2: #1a2233;
+  --panel-3: #222c42;
+
+  /* ---- Text (tuned for WCAG AA on the surfaces above) ---- */
+  --text: #eef2f9;
+  --text-strong: #ffffff;
+  --muted: #9fabc4; /* ≥ 4.5:1 on --panel */
+  --faint: #6d7994;
+
+  /* ---- Hairlines & structure ---- */
+  --border: #232d44;
+  --border-strong: #33415f;
+
+  /* ---- Market / semantic colour language ----
+     Bright enough to clear AA at the sizes/weights they're used. */
+  --green: #34e0a1; /* bullish / buy */
+  --teal: #2dd4bf; /* lean buy */
+  --gray: #9aa7c0; /* neutral / hold */
+  --orange: #f6b545; /* caution / trim */
+  --red: #ff6b78; /* bearish / sell */
+
+  /* Semantic aliases (self-documenting for future use) */
+  --positive: var(--green);
+  --negative: var(--red);
+  --caution: var(--orange);
+  --neutral: var(--gray);
+
+  /* ---- Brand / interactive accent ---- */
+  --accent: #7d95ff;
+  --accent-strong: #5b76f0;
+  --accent-contrast: #0a0f1e;
+
+  /* ---- Focus ring (accessibility) ---- */
+  --ring: #9db4ff;
+
+  /* ---- Typography ---- */
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:
+    var(--font-jbmono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Radii ---- */
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+
+  /* ---- Elevation ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+
+  /* App canvas width — grows on larger viewports (see media queries). */
+  --app-max: 480px;
 }
 
 * {
@@ -21,19 +74,95 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
   color: var(--text);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overscroll-behavior-y: none;
+  font-feature-settings: "cv05", "ss01";
+}
+
+/* Ambient backdrop so the app reads as an intentional canvas — never a lone
+   phone frame floating in dead black on desktop. */
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(
+      1200px 600px at 50% -10%,
+      rgba(125, 149, 255, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at 100% 0%,
+      rgba(45, 212, 191, 0.05),
+      transparent 55%
+    ),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* Numeric data — prices, scores, SHAP values — get the mono face with
+   tabular figures so columns line up like a trading terminal. */
+.score,
+.oppscore,
+.posval,
+.driver .num,
+.newssrc,
+.opprank {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Global, accessible focus indicator (WCAG 2.4.7). */
+:where(button, a, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Respect reduced-motion preferences (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: rgba(125, 149, 255, 0.32);
+}
+
+/* Native-app touch feel: no blue tap flash, no long-press callout, and stop
+   accidental text selection on controls while dragging/scrolling. */
+button {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.navbtn,
+.bottomnav,
+.topbar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Screen-reader-only helper for non-visual context (WCAG 1.4.1). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Lock the page behind the analysis sheet so the list keeps its scroll spot. */
@@ -44,12 +173,14 @@ body.sheet-open {
 /* ---- Mobile app shell ---------------------------------------------------- */
 .app-shell {
   position: relative;
-  max-width: 480px;
+  max-width: var(--app-max);
   min-height: 100dvh;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 240px),
+    var(--bg-elevated);
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
@@ -61,11 +192,23 @@ body.sheet-open {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: calc(env(safe-area-inset-top) + 14px) 20px 12px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  padding: calc(env(safe-area-inset-top) + 16px) 20px 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   border-bottom: 1px solid var(--border);
+}
+
+/* A small brand glyph anchors the header and signals "live" data. */
+.topbar-brand::before {
+  content: "";
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(52, 224, 161, 0.18);
+  margin-bottom: 7px;
 }
 
 .topbar-brand {
@@ -75,14 +218,16 @@ body.sheet-open {
 }
 
 .topbar-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.02em;
+  color: var(--text-strong);
 }
 
 .topbar-sub {
   font-size: 12px;
   color: var(--muted);
+  letter-spacing: 0.01em;
 }
 
 .tabpanel {
@@ -115,11 +260,11 @@ body.sheet-open {
   inset-inline: 0;
   bottom: 0;
   z-index: 40;
-  max-width: 480px;
+  max-width: var(--app-max);
   margin: 0 auto;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-top: 1px solid var(--border);
 }
 
@@ -137,24 +282,43 @@ body.sheet-open {
 }
 
 .navbtn {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 9px 4px 8px;
+  gap: 4px;
+  padding: 11px 4px 10px;
   background: none;
   border: none;
   color: var(--muted);
   font: inherit;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   transition: color 0.15s ease;
 }
 
-.navbtn.active {
+.navbtn:hover {
   color: var(--text);
+}
+
+/* Active tab: a top accent bar + brand-tinted icon (not colour alone —
+   aria-current also marks it for assistive tech). */
+.navbtn.active {
+  color: var(--text-strong);
+}
+
+.navbtn.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 26px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
 }
 
 .navbtn.active svg {
@@ -169,62 +333,97 @@ body.sheet-open {
 
 .searchbar input {
   flex: 1;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 16px;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  font-size: 16px; /* ≥16px stops iOS Safari zoom-on-focus */
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.searchbar input::placeholder {
+  color: var(--faint);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .searchbar input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(125, 149, 255, 0.18);
 }
 
 .searchbar button {
-  background: var(--accent);
-  color: white;
+  flex-shrink: 0;
+  min-height: 48px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
   border: none;
-  border-radius: 10px;
-  padding: 0 20px;
+  border-radius: var(--radius-sm);
+  padding: 0 22px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.08s ease,
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.searchbar button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.searchbar button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .searchbar button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .hint {
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.55;
   margin: 0 0 24px;
 }
 
 .status {
-  padding: 16px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .status.error {
-  border-color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+  background: color-mix(in srgb, var(--red) 10%, var(--panel));
   color: var(--red);
 }
 
 .card {
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  margin-top: 20px;
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-top: 18px;
+  box-shadow: var(--shadow-md);
 }
 
 .card-top {
@@ -236,14 +435,16 @@ body.sheet-open {
 
 .ticker {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
   margin: 0;
 }
 
 .asof {
   color: var(--muted);
   font-size: 13px;
-  margin: 2px 0 0;
+  margin: 3px 0 0;
 }
 
 .score-block {
@@ -251,31 +452,34 @@ body.sheet-open {
 }
 
 .score {
-  font-size: 44px;
+  font-size: 46px;
   font-weight: 800;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
 
 .score span {
-  font-size: 18px;
+  font-size: 17px;
   color: var(--muted);
   font-weight: 600;
 }
 
 .rec {
   display: inline-block;
-  margin-top: 8px;
-  padding: 4px 12px;
+  margin-top: 10px;
+  padding: 5px 13px;
   border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .section-label {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   font-size: 11px;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--faint);
   margin: 24px 0 10px;
 }
 
@@ -284,9 +488,10 @@ body.sheet-open {
   flex-wrap: wrap;
   gap: 10px 24px;
   margin-top: 14px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--panel-2);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   font-size: 13px;
 }
 
@@ -309,17 +514,32 @@ body.sheet-open {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   background: var(--panel-2);
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   margin-bottom: 8px;
   font-size: 14px;
 }
 
 .driver .dir {
   font-weight: 800;
-  width: 18px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 15px;
   text-align: center;
+}
+
+.driver .dir.pos {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+.driver .dir.neg {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
 }
 
 .driver .dir.pos {
@@ -348,9 +568,9 @@ body.sheet-open {
 }
 
 .flag {
-  background: rgba(251, 191, 36, 0.12);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
   color: var(--orange);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  border: 1px solid color-mix(in srgb, var(--orange) 32%, transparent);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 12px;
@@ -358,9 +578,9 @@ body.sheet-open {
 }
 
 .flag.none {
-  background: rgba(52, 211, 153, 0.1);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   color: var(--green);
-  border-color: rgba(52, 211, 153, 0.3);
+  border-color: color-mix(in srgb, var(--green) 30%, transparent);
 }
 
 .meta {
@@ -390,8 +610,13 @@ body.sheet-open {
 }
 
 .card.analyst {
-  border-color: rgba(129, 140, 248, 0.35);
-  background: linear-gradient(180deg, rgba(129, 140, 248, 0.07), var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 55%
+    ),
+    var(--panel);
 }
 
 .analyst-head {
@@ -407,7 +632,7 @@ body.sheet-open {
   letter-spacing: 0.08em;
   font-size: 11px;
   font-weight: 700;
-  color: #a5b4fc;
+  color: var(--accent);
 }
 
 .analyst-badge.muted {
@@ -495,21 +720,29 @@ body.sheet-open {
 }
 
 .refresh-btn {
-  border: 1px solid var(--border, #2a2a2a);
-  background: var(--card, #161616);
-  color: var(--fg, #eaeaea);
-  font-size: 12px;
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13px;
   font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease,
     opacity 0.15s ease;
 }
 
 .refresh-btn:hover:not(:disabled) {
-  border-color: var(--green, #35c46a);
+  border-color: var(--accent);
+  background: var(--panel-3);
+}
+
+.refresh-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .refresh-btn:disabled {
@@ -525,51 +758,64 @@ body.sheet-open {
 
 .opprow {
   display: grid;
-  grid-template-columns: 40px 64px 78px 1fr auto;
+  grid-template-columns: 34px 60px 70px 1fr auto;
   align-items: center;
   gap: 12px;
   width: 100%;
+  min-height: 60px;
   text-align: left;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   color: var(--text);
   cursor: pointer;
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease;
 }
 
 .opprow:hover {
-  border-color: var(--accent);
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+}
+
+.opprow:active {
+  transform: scale(0.99);
   background: var(--panel-2);
 }
 
 .opprank {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  color: var(--faint);
   font-size: 13px;
+  font-weight: 600;
 }
 
 .oppticker {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
 }
 
 .oppscore {
   font-weight: 800;
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
+  font-size: 19px;
 }
 
 .oppscore small {
-  color: var(--muted);
+  color: var(--faint);
   font-size: 11px;
   font-weight: 600;
 }
 
 .opprec {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .oppflags {
@@ -580,19 +826,19 @@ body.sheet-open {
 }
 
 .oppflag {
-  background: rgba(251, 191, 36, 0.12);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
   color: var(--orange);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  border: 1px solid color-mix(in srgb, var(--orange) 32%, transparent);
   border-radius: 999px;
-  padding: 2px 10px;
+  padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
 }
 
 .oppflag.none {
-  background: rgba(52, 211, 153, 0.1);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   color: var(--green);
-  border-color: rgba(52, 211, 153, 0.3);
+  border-color: color-mix(in srgb, var(--green) 30%, transparent);
 }
 
 .tabs {
@@ -632,17 +878,31 @@ body.sheet-open {
 .reccard {
   width: 100%;
   text-align: left;
-  background: var(--panel);
-  border: 1px solid rgba(52, 211, 153, 0.35);
-  border-radius: 12px;
-  padding: 14px 16px;
+  background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--green) 8%, transparent),
+      transparent 60%
+    ),
+    var(--panel);
+  border: 1px solid color-mix(in srgb, var(--green) 32%, var(--border));
+  border-radius: var(--radius);
+  padding: 15px 16px;
   color: var(--text);
   cursor: pointer;
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background 0.15s ease,
+    transform 0.08s ease;
 }
 
 .reccard:hover {
   background: var(--panel-2);
+}
+
+.reccard:active {
+  transform: scale(0.99);
 }
 
 .recrow {
@@ -661,8 +921,9 @@ body.sheet-open {
 .poscard {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: var(--radius);
+  padding: 15px 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 .posrow {
@@ -674,12 +935,14 @@ body.sheet-open {
 .linklike {
   background: none;
   border: none;
-  color: var(--text);
+  color: var(--text-strong);
   font: inherit;
-  font-weight: 700;
+  font-weight: 800;
   font-size: 16px;
+  letter-spacing: 0.01em;
   cursor: pointer;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .linklike:hover {
@@ -695,14 +958,20 @@ body.sheet-open {
 
 .sellbtn {
   margin-left: auto;
+  min-height: 36px;
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--muted);
-  border-radius: 8px;
-  padding: 5px 12px;
+  border-radius: 999px;
+  padding: 6px 14px;
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .sellbtn:hover {
@@ -805,7 +1074,7 @@ body.sheet-open {
 
 @keyframes sheet-in {
   from {
-    transform: translateY(16px);
+    transform: translateY(24px);
     opacity: 0;
   }
   to {
@@ -819,30 +1088,83 @@ body.sheet-open {
   top: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  grid-template-columns: 44px 1fr auto;
   align-items: center;
-  padding: calc(env(safe-area-inset-top) + 10px) 8px 10px;
+  gap: 6px;
+  padding: calc(env(safe-area-inset-top) + 10px) 12px 10px 8px;
   background: color-mix(in srgb, var(--bg) 90%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
+/* Add-to-portfolio action, right in the analysis header so a stock can be
+   tracked straight from browsing — no need to search for it first. */
+.sheet-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter 0.15s ease,
+    transform 0.08s ease,
+    background 0.15s ease;
+}
+
+.sheet-add:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.sheet-add:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.sheet-add.tracked {
+  background: none;
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+  color: var(--green);
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.95;
+}
+
+.sheet-add:disabled:not(.tracked) {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .sheet-back {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   background: none;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
 }
 
 .sheet-back:hover {
   background: var(--panel);
+}
+
+.sheet-back:active {
+  background: var(--panel-2);
 }
 
 .sheet-title {
@@ -859,13 +1181,337 @@ body.sheet-open {
   padding: 12px 16px calc(env(safe-area-inset-bottom) + 24px);
 }
 
-/* On wider screens keep the phone-frame look centered on the page. */
+/* On wider screens present the app as a tidy, centred phone-style canvas —
+   this is a mobile-first installed PWA, so we keep the focused single column
+   and just frame it handsomely instead of stretching into a dashboard. */
 @media (min-width: 520px) {
   .app-shell {
-    margin-top: 20px;
-    margin-bottom: 20px;
-    min-height: calc(100dvh - 40px);
-    border-radius: 20px;
+    margin-top: 24px;
+    margin-bottom: 24px;
+    min-height: calc(100dvh - 48px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
     overflow: hidden;
+    box-shadow: var(--shadow-lg);
   }
+
+  /* Keep the fixed nav aligned to the framed canvas. */
+  .bottomnav {
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+}
+
+/* ==========================================================================
+   Visualization layer — gauges, bars & meters (pure SVG/CSS, no libraries)
+   ========================================================================== */
+
+/* Grow-in animation for bar fills (disabled under prefers-reduced-motion via
+   the global rule near the top of this file). */
+@keyframes viz-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ---- Conviction ring gauge ---- */
+.ring {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  flex-shrink: 0;
+}
+
+.ring-track {
+  stroke: var(--panel-3);
+}
+
+.ring-value {
+  transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.ring-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.ring-max {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---- Horizon comparison bars (12-month vs near-term) ---- */
+.hzbars {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 13px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.hzrow {
+  display: grid;
+  grid-template-columns: 74px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+}
+
+.hzlabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.hztrack {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.hzfill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+  animation: viz-grow-x 0.5s ease both;
+}
+
+.hznum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* ---- SHAP driver bars (diverging contribution chart) ---- */
+.dbars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dbar-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.dbar-dir {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.dbar-dir.pos {
+  color: var(--green);
+}
+
+.dbar-dir.neg {
+  color: var(--red);
+}
+
+.dbar-feat {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dbar-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.dbar-shap {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dbar-shap.pos {
+  color: var(--green);
+}
+
+.dbar-shap.neg {
+  color: var(--red);
+}
+
+.dbar-track {
+  position: relative;
+  height: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.dbar-zero {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.dbar-fill {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 999px;
+  animation: viz-grow-x 0.5s ease both;
+}
+
+.dbar-fill.pos {
+  left: 50%;
+  transform-origin: left center;
+  background: var(--green);
+}
+
+.dbar-fill.neg {
+  right: 50%;
+  transform-origin: right center;
+  background: var(--red);
+}
+
+/* ---- News sentiment meter ---- */
+.smeter {
+  margin-top: 14px;
+}
+
+.smeter-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--red) 0%,
+    color-mix(in srgb, var(--gray) 70%, var(--panel-3)) 50%,
+    var(--green) 100%
+  );
+}
+
+.smeter-marker {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--text-strong);
+  box-shadow: 0 0 0 2px var(--panel), 0 2px 6px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+}
+
+.smeter-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* ---- Watchlist row: conviction strip + direction caret ---- */
+.opprow {
+  position: relative;
+  overflow: hidden;
+}
+
+.oppcaret {
+  font-size: 9px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.oppcaret.bull {
+  color: var(--green);
+}
+
+.oppcaret.bear {
+  color: var(--red);
+}
+
+.oppcaret.neutral {
+  color: var(--gray);
+}
+
+.oppbar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 2px 0 0;
+  transform-origin: left center;
+  animation: viz-grow-x 0.5s ease both;
+  opacity: 0.9;
+}
+
+/* ---- Position profit / loss bar ---- */
+.plbar {
+  position: relative;
+  height: 9px;
+  margin: 12px 0 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.plbar-zero {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.plbar-fill {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 999px;
+  animation: viz-grow-x 0.5s ease both;
+}
+
+.plbar-fill.pos {
+  left: 50%;
+  transform-origin: left center;
+  background: var(--green);
+}
+
+.plbar-fill.neg {
+  right: 50%;
+  transform-origin: right center;
+  background: var(--red);
 }

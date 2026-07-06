@@ -17,6 +17,23 @@ function money(x: number | null | undefined): string {
   return x === null || x === undefined ? "—" : `$${x.toFixed(2)}`;
 }
 
+// Diverging profit/loss bar: grows right (green) when up, left (red) when down,
+// from a centre "break-even" axis. Saturates at ±25% so small moves stay
+// readable. Colour is backed by the signed % text, never colour alone.
+function PLBar({ pct }: { pct: number }) {
+  const up = pct >= 0;
+  const width = Math.min(Math.abs(pct) / 0.25, 1) * 50;
+  return (
+    <div className="plbar" aria-hidden="true">
+      <span className="plbar-zero" />
+      <span
+        className={`plbar-fill ${up ? "pos" : "neg"}`}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
 export function PositionCard({
   p,
   onSell,
@@ -96,6 +113,10 @@ export function PositionCard({
           </div>
         )}
       </div>
+
+      {p.price_change_pct !== null && p.price_change_pct !== undefined && (
+        <PLBar pct={p.price_change_pct} />
+      )}
 
       <p className="posexpert">{p.expert_view}</p>
       <div className="posmeta">

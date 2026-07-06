@@ -1,5 +1,21 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+// UI typeface — Inter for crisp, professional labels and prose.
+const sans = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+// Numeric / data typeface — a monospaced face gives prices, scores and
+// SHAP values fixed-width, terminal-grade alignment.
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-jbmono",
+});
 
 export const metadata: Metadata = {
   title: "Stock-Monitor",
@@ -18,7 +34,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b1020",
+  themeColor: "#080b13",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -32,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
   );

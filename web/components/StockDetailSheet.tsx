@@ -13,6 +13,9 @@ export function StockDetailSheet({
   loading,
   error,
   onClose,
+  onAdd,
+  adding = false,
+  tracked = false,
 }: {
   ticker: string;
   data: ScoreResponse | null;
@@ -21,6 +24,9 @@ export function StockDetailSheet({
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onAdd?: () => void;
+  adding?: boolean;
+  tracked?: boolean;
 }) {
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label={`${ticker} analysis`}>
@@ -31,7 +37,39 @@ export function StockDetailSheet({
           </svg>
         </button>
         <span className="sheet-title">{ticker || "Analysis"}</span>
-        <span className="sheet-spacer" aria-hidden />
+        {onAdd && data ? (
+          <button
+            type="button"
+            className={`sheet-add ${tracked ? "tracked" : ""}`}
+            onClick={onAdd}
+            disabled={adding || tracked}
+            aria-label={
+              tracked
+                ? `${ticker} is already in your portfolio`
+                : `Add ${ticker} to your portfolio`
+            }
+          >
+            {tracked ? (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                Tracked
+              </>
+            ) : adding ? (
+              "Adding…"
+            ) : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Add
+              </>
+            )}
+          </button>
+        ) : (
+          <span className="sheet-spacer" aria-hidden />
+        )}
       </header>
 
       <div className="sheet-body">

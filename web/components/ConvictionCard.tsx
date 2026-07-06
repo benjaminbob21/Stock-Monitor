@@ -1,4 +1,6 @@
 import type { ScoreResponse } from "@/lib/types";
+import { ConvictionRing } from "@/components/ConvictionRing";
+import { DriverBars } from "@/components/DriverBars";
 
 const REC_COLORS: Record<string, string> = {
   "consider buying": "var(--green)",
@@ -21,12 +23,6 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
         <div>
           <p className="ticker">{data.ticker}</p>
           <p className="asof">as of {data.as_of}</p>
-        </div>
-        <div className="score-block">
-          <div className="score" style={{ color }}>
-            {data.conviction}
-            <span>/100</span>
-          </div>
           <span
             className="rec"
             style={{
@@ -38,17 +34,41 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
             {data.recommendation}
           </span>
         </div>
+        <ConvictionRing
+          value={data.conviction}
+          color={color}
+          caption={data.recommendation}
+        />
       </div>
 
       {data.conviction_3m !== null && data.conviction_3m !== undefined && (
-        <div className="horizon">
-          <span>
-            <b>12-month</b> {data.conviction}/100 · {data.recommendation}
-          </span>
-          <span>
-            <b>near-term (3-month)</b> {data.conviction_3m}/100 ·{" "}
-            {data.recommendation_3m}
-          </span>
+        <div className="hzbars">
+          <div className="hzrow">
+            <span className="hzlabel">12-month</span>
+            <span className="hztrack">
+              <span
+                className="hzfill"
+                style={{
+                  width: `${Math.max(0, Math.min(100, data.conviction))}%`,
+                  background: color,
+                }}
+              />
+            </span>
+            <span className="hznum">{data.conviction}</span>
+          </div>
+          <div className="hzrow">
+            <span className="hzlabel">near-term</span>
+            <span className="hztrack">
+              <span
+                className="hzfill"
+                style={{
+                  width: `${Math.max(0, Math.min(100, data.conviction_3m))}%`,
+                  background: recColor(data.recommendation_3m ?? ""),
+                }}
+              />
+            </span>
+            <span className="hznum">{data.conviction_3m}</span>
+          </div>
         </div>
       )}
 
@@ -76,18 +96,7 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
       )}
 
       <p className="section-label">Top drivers (SHAP)</p>
-      {data.drivers.map((d) => (
-        <div className="driver" key={d.feature}>
-          <span className={`dir ${d.direction === "+" ? "pos" : "neg"}`}>
-            {d.direction}
-          </span>
-          <span className="feat">{d.feature}</span>
-          <span className="num">
-            value {Number.isFinite(d.value) ? d.value.toFixed(4) : "n/a"} · shap{" "}
-            {Number.isFinite(d.shap) ? d.shap.toFixed(3) : "n/a"}
-          </span>
-        </div>
-      ))}
+      <DriverBars drivers={data.drivers} />
 
       <p className="section-label">Risk flags</p>
       <div className="flags">

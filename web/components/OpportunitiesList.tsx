@@ -1,4 +1,5 @@
 import type { Opportunity } from "@/lib/types";
+import { recTone, toneCaret } from "@/lib/ui";
 
 const REC_COLORS: Record<string, string> = {
   "consider buying": "var(--green)",
@@ -23,12 +24,14 @@ export function OpportunitiesList({
     <div className="opplist">
       {items.map((o) => {
         const color = recColor(o.recommendation);
+        const tone = recTone(o.recommendation);
         return (
           <button
             key={o.ticker}
             className="opprow"
             onClick={() => onPick?.(o.ticker)}
             title="Look up this ticker"
+            aria-label={`${o.ticker}, rank ${o.rank}, conviction ${o.capped_conviction} out of 100, ${o.recommendation}`}
           >
             <span className="opprank">#{o.rank}</span>
             <span className="oppticker">{o.ticker}</span>
@@ -37,6 +40,9 @@ export function OpportunitiesList({
               <small>/100</small>
             </span>
             <span className="opprec" style={{ color }}>
+              <span className={`oppcaret ${tone}`} aria-hidden="true">
+                {toneCaret(tone)}
+              </span>
               {o.recommendation}
             </span>
             <span className="oppflags">
@@ -50,6 +56,14 @@ export function OpportunitiesList({
                 ))
               )}
             </span>
+            <span
+              className="oppbar"
+              aria-hidden="true"
+              style={{
+                width: `${Math.max(0, Math.min(100, o.capped_conviction))}%`,
+                background: color,
+              }}
+            />
           </button>
         );
       })}

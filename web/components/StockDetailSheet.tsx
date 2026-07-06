@@ -1,13 +1,15 @@
 "use client";
 
+import { AnalystCard } from "@/components/AnalystCard";
 import { ConvictionCard } from "@/components/ConvictionCard";
 import { NewsPanel } from "@/components/NewsPanel";
-import type { NewsResponse, ScoreResponse } from "@/lib/types";
+import type { AnalystResponse, NewsResponse, ScoreResponse } from "@/lib/types";
 
 export function StockDetailSheet({
   ticker,
   data,
   news,
+  analyst,
   loading,
   error,
   onClose,
@@ -15,6 +17,7 @@ export function StockDetailSheet({
   ticker: string;
   data: ScoreResponse | null;
   news: NewsResponse | null;
+  analyst: AnalystResponse | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
@@ -37,6 +40,7 @@ export function StockDetailSheet({
         )}
         {error && <div className="status error">{error}</div>}
         {data && <ConvictionCard data={data} />}
+        {data && <AnalystCard analyst={analyst} />}
         {news && <NewsPanel news={news} />}
       </div>
     </div>

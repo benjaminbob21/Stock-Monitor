@@ -7,6 +7,7 @@ import { PositionCard } from "@/components/PositionCard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { StockDetailSheet } from "@/components/StockDetailSheet";
 import type {
+  AnalystResponse,
   ApiError,
   NewsResponse,
   OpportunitiesResponse,
@@ -32,6 +33,7 @@ export default function Home() {
   const [ticker, setTicker] = useState("");
   const [data, setData] = useState<ScoreResponse | null>(null);
   const [news, setNews] = useState<NewsResponse | null>(null);
+  const [analyst, setAnalyst] = useState<AnalystResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -150,6 +152,7 @@ export default function Home() {
     setError(null);
     setData(null);
     setNews(null);
+    setAnalyst(null);
     try {
       const res = await fetch(`/api/score/${encodeURIComponent(clean)}`);
       const body = (await res.json()) as ScoreResponse | ApiError;
@@ -162,6 +165,12 @@ export default function Home() {
           if (nres.ok) setNews((await nres.json()) as NewsResponse);
         } catch {
           /* news is optional */
+        }
+        try {
+          const ares = await fetch(`/api/analyst/${encodeURIComponent(clean)}`);
+          if (ares.ok) setAnalyst((await ares.json()) as AnalystResponse);
+        } catch {
+          /* analyst second opinion is optional */
         }
       }
     } catch {
@@ -400,6 +409,7 @@ export default function Home() {
           ticker={detailTicker}
           data={data}
           news={news}
+          analyst={analyst}
           loading={loading}
           error={error}
           onClose={closeSheet}

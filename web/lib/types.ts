@@ -18,7 +18,24 @@ export interface ScoreResponse {
   disclaimer: string;
   conviction_3m?: number | null;
   recommendation_3m?: string | null;
+  near_term_note?: string | null;
   days_to_earnings?: number | null;
+}
+
+export interface AnalystOpinion {
+  opinion: "BUY" | "HOLD" | "SELL";
+  confidence: "low" | "medium" | "high" | "unknown";
+  rationale: string;
+  key_risks: string[];
+  agrees_with_model: boolean;
+  model: string;
+  disclaimer: string;
+}
+
+export interface AnalystResponse {
+  ticker: string;
+  opinion: AnalystOpinion | null;
+  note: string | null;
 }
 
 export interface ApiError {

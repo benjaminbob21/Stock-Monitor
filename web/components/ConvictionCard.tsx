@@ -52,6 +52,16 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
         </div>
       )}
 
+      {(data.conviction_3m === null || data.conviction_3m === undefined) &&
+        data.near_term_note && (
+          <div className="horizon">
+            <span>
+              <b>near-term</b> {data.recommendation_3m ?? "no clear near-term signal"}
+            </span>
+            <span className="near-term-note">{data.near_term_note}</span>
+          </div>
+        )}
+
       {data.days_to_earnings !== null && data.days_to_earnings !== undefined && (
         <p
           className="earnings"

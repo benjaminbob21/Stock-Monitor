@@ -382,6 +382,91 @@ body.sheet-open {
   line-height: 1.5;
 }
 
+.near-term-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  flex-basis: 100%;
+}
+
+.card.analyst {
+  border-color: rgba(129, 140, 248, 0.35);
+  background: linear-gradient(180deg, rgba(129, 140, 248, 0.07), var(--panel));
+}
+
+.analyst-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 12px;
+}
+
+.analyst-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.analyst-badge.muted {
+  color: var(--muted);
+}
+
+.analyst-verdict {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.analyst-conf {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analyst-agree {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.analyst-agree.agree {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.analyst-agree.disagree {
+  color: var(--orange);
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.analyst-rationale {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.analyst-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analyst-meta {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+
 .opps-header {
   display: flex;
   align-items: baseline;

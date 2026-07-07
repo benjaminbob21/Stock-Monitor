@@ -288,6 +288,19 @@ class Storage:
         ).fetchone()
         return bool(row and row[0] > 0)
 
+    def last_alert_detail(self, ticker: str, kind: str) -> str | None:
+        """Return the ``detail`` of the most recent alert of this kind, or None.
+
+        Used for state-change detection (e.g. only ping when a holding's exit
+        signal actually *changes* to 'consider selling', not every hour it sits there).
+        """
+        row = self._con.execute(
+            "SELECT detail FROM alerts WHERE ticker = ? AND kind = ? "
+            "ORDER BY sent_at DESC LIMIT 1",
+            [ticker, kind],
+        ).fetchone()
+        return row[0] if row else None
+
     def add_position(
         self,
         position_id: str,

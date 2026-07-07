@@ -87,3 +87,78 @@ def test_heartbeat_healthy_and_stale(tmp_path: Path) -> None:
     empty_notifier = CapturingNotifier()
     assert check_heartbeat(empty_settings, empty_notifier) is False
     assert empty_notifier.messages
+
+
+def test_last_alert_detail_returns_most_recent(tmp_path: Path) -> None:
+    with Storage(str(tmp_path / "a.duckdb")) as store:
+        assert store.last_alert_detail("AAA", "exit_state") is None
+        store.record_alert("AAA", "exit_state", "hold")
+        store.record_alert("AAA", "exit_state", "consider selling")
+        assert store.last_alert_detail("AAA", "exit_state") == "consider selling"
+        # Different kind is isolated.
+        assert store.last_alert_detail("AAA", "take_profit") is None
+
+
+def _open_view(**over: object) -> dict:
+    base = {
+        "status": "open",
+        "ticker": "AAA",
+        "signal": "hold",
+        "current_conviction": 72,
+        "entry_conviction": 60,
+        "current_flags": [],
+        "price_change_pct": 0.05,
+        "conviction_change": 12,
+        "expert_view": "The thesis still holds — hold.",
+    }
+    base.update(over)
+    return base
+
+
+def test_holdings_signals_fire_and_debounce(tmp_path: Path, monkeypatch) -> None:
+    import stock_monitor.positions as positions
+    import stock_monitor.scheduler as sched
+
+    settings = Settings(db_path=str(tmp_path / "h.duckdb"))
+    # Patch the scoring seams so no model/network is needed.
+    monkeypatch.setattr(
+        sched, "_load_scoring_context", lambda s: ("m", "v1", "pp", "fp", "np", "an")
+    )
+    monkeypatch.setattr(sched, "_daily_return", lambda pp, t: 0.09)  # sharp +9%
+
+    # A holding that is up +25% (take-profit), signal turned to SELL, moving sharply.
+    view = _open_view(
+        signal="consider selling", current_conviction=30, price_change_pct=0.25
+    )
+    monkeypatch.setattr(positions, "list_position_views", lambda *a, **k: [view])
+
+    notifier = CapturingNotifier()
+    sent = sched.check_holdings_signals(settings, notifier)
+    assert sent == 3  # exit->sell + take-profit + sharp move
+    joined = " ".join(t for t, _ in notifier.messages)
+    assert "AAA" in joined and "selling" in joined
+
+    # Nothing changed on the next run -> everything is debounced.
+    again = CapturingNotifier()
+    assert sched.check_holdings_signals(settings, again) == 0
+    assert again.messages == []
+
+
+def test_holdings_signals_hold_is_quiet(tmp_path: Path, monkeypatch) -> None:
+    import stock_monitor.positions as positions
+    import stock_monitor.scheduler as sched
+
+    settings = Settings(db_path=str(tmp_path / "q.duckdb"))
+    monkeypatch.setattr(
+        sched, "_load_scoring_context", lambda s: ("m", "v1", "pp", "fp", "np", "an")
+    )
+    monkeypatch.setattr(sched, "_daily_return", lambda pp, t: 0.01)  # calm day
+
+    # A healthy hold, up only a little -> no urgent alert at all.
+    monkeypatch.setattr(
+        positions, "list_position_views", lambda *a, **k: [_open_view()]
+    )
+    notifier = CapturingNotifier()
+    assert sched.check_holdings_signals(settings, notifier) == 0
+    assert notifier.messages == []
+

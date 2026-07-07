@@ -101,6 +101,145 @@ def check_holdings_news(settings: Settings, notifier: Notifier) -> int:
     return sent
 
 
+def _load_scoring_context(settings: Settings):
+    """Load the model + providers needed to re-score tracked positions in a job.
+
+    Returns ``(model, version, price_provider, fundamental_provider, news_provider,
+    analyzer)`` or ``None`` if no trained model is available yet.
+    """
+    from stock_monitor.models.registry import compute_model_version, load_model
+    from stock_monitor.providers import get_price_provider
+    from stock_monitor.providers.edgar_provider import EdgarProvider
+
+    model = load_model(settings.model_path)
+    if model is None:
+        logger.warning("holdings signals: no trained model — skipping")
+        return None
+    return (
+        model,
+        compute_model_version(model),
+        get_price_provider(settings),
+        EdgarProvider(),
+        get_news_provider(settings),
+        get_sentiment_analyzer(settings),
+    )
+
+
+def _daily_return(price_provider, ticker: str) -> float | None:
+    """Latest single-day return for ``ticker`` (last close vs the prior close)."""
+    end = dt.date.today() + dt.timedelta(days=1)
+    start = end - dt.timedelta(days=7)
+    try:
+        prices = price_provider.get_prices(ticker, start, end)
+    except Exception:  # noqa: BLE001 — a price hiccup must not break the loop
+        return None
+    if prices is None or len(prices) < 2 or "close" not in prices:
+        return None
+    closes = prices["close"].dropna()
+    if len(closes) < 2 or closes.iloc[-2] == 0:
+        return None
+    return float(closes.iloc[-1] / closes.iloc[-2] - 1.0)
+
+
+def check_holdings_signals(settings: Settings, notifier: Notifier) -> int:
+    """Alert (debounced) on urgent moves in your tracked positions.
+
+    Three immediate, urgent triggers — the routine trim/hold reads live in the daily
+    digest instead (see :func:`send_daily_digest`):
+
+    1. **Exit → sell**: the re-scored exit signal newly turns to "consider selling"
+       (a falling conviction *or* a material risk/negative-news/earnings flag). Fires
+       once on the state change, not every hour it stays there.
+    2. **Take-profit**: the holding is up ≥ ``take_profit_pct`` vs your entry — a nudge
+       to consider locking in gains. Re-nudges at most once per ``take_profit_cooldown``.
+    3. **Sharp move**: the holding moved ≥ ``sharp_move_pct`` in a single day — the one
+       genuinely intraday case that justifies an hourly check.
+
+    Returns the number of alerts sent.
+    """
+    from stock_monitor.positions import list_position_views
+
+    ctx = _load_scoring_context(settings)
+    if ctx is None:
+        return 0
+    model, version, price_provider, fundamental_provider, news_provider, analyzer = ctx
+    sent = 0
+
+    with Storage(settings.db_path) as storage:
+        views = list_position_views(
+            model,
+            version,
+            price_provider,
+            fundamental_provider,
+            storage,
+            news_provider=news_provider,
+            analyzer=analyzer,
+            negative_threshold=settings.sentiment_negative_threshold,
+            news_lookback_days=settings.news_lookback_days,
+        )
+        for view in views:
+            if view.get("status") != "open":
+                continue
+            ticker = view["ticker"]
+            try:
+                signal = view.get("signal", "")
+
+                # 1. Exit-signal state change → "consider selling" (urgent, once).
+                if signal != storage.last_alert_detail(ticker, "exit_state"):
+                    if signal == "consider selling":
+                        flags = [f for f in view.get("current_flags", [])]
+                        reason = (
+                            f"conviction {view.get('current_conviction')}"
+                            + (f", flags: {', '.join(flags)}" if flags else "")
+                        )
+                        notifier.send(
+                            f"🔻 {ticker}: consider selling",
+                            f"Exit signal turned to SELL ({reason}).\n"
+                            f"{view.get('expert_view', '')}",
+                        )
+                        sent += 1
+                    # Record every transition so the state machine stays accurate and a
+                    # later re-entry into SELL fires again.
+                    storage.record_alert(ticker, "exit_state", signal)
+
+                # 2. Take-profit milestone (winning as predicted).
+                pc = view.get("price_change_pct")
+                if (
+                    pc is not None
+                    and pc >= settings.take_profit_pct
+                    and not storage.recent_alert(
+                        ticker, "take_profit", settings.take_profit_cooldown_hours
+                    )
+                ):
+                    notifier.send(
+                        f"🎯 {ticker}: up {pc:+.1%} — take profit?",
+                        f"Now {pc:+.1%} vs your entry (signal: {signal}). "
+                        "Consider trimming to lock in gains.",
+                    )
+                    storage.record_alert(ticker, "take_profit", f"{pc:+.3f}")
+                    sent += 1
+
+                # 3. Sharp single-day move.
+                dod = _daily_return(price_provider, ticker)
+                if (
+                    dod is not None
+                    and abs(dod) >= settings.sharp_move_pct
+                    and not storage.recent_alert(
+                        ticker, "sharp_move", settings.holdings_alert_debounce_hours
+                    )
+                ):
+                    arrow = "📈" if dod > 0 else "📉"
+                    notifier.send(
+                        f"{arrow} {ticker}: {dod:+.1%} today",
+                        f"Sharp one-day move ({dod:+.1%}). Signal: {signal}.",
+                    )
+                    storage.record_alert(ticker, "sharp_move", f"{dod:+.3f}")
+                    sent += 1
+            except Exception:  # noqa: BLE001 — one holding must not break the loop
+                logger.exception("holdings signal check failed for %s", ticker)
+    return sent
+
+
 def _safe(fn, *args) -> None:
     try:
         fn(*args)
@@ -179,7 +318,55 @@ def send_daily_digest(settings: Settings, notifier: Notifier) -> None:
         ranked = storage.read_latest_opportunities(limit=settings.digest_top_n)
         summary = paper_summary(storage)
     title, body = compose_digest(ranked, summary, top_n=settings.digest_top_n)
+
+    holdings = _holdings_digest_block(settings)
+    if holdings:
+        body = f"{body}\n\n{holdings}"
     notifier.send(title, body)
+
+
+def _holdings_digest_block(settings: Settings) -> str:
+    """A once-daily summary of your tracked holdings (routine hold/trim/winning reads).
+
+    This is where the non-urgent signals live — trim/watch, steady holds, and names
+    running as predicted — so the hourly job only ever interrupts you for urgent moves.
+    Best-effort: returns "" if there are no open positions or scoring is unavailable.
+    """
+    from stock_monitor.positions import list_position_views
+
+    ctx = _load_scoring_context(settings)
+    if ctx is None:
+        return ""
+    model, version, price_provider, fundamental_provider, news_provider, analyzer = ctx
+    with Storage(settings.db_path) as storage:
+        views = list_position_views(
+            model,
+            version,
+            price_provider,
+            fundamental_provider,
+            storage,
+            news_provider=news_provider,
+            analyzer=analyzer,
+            negative_threshold=settings.sentiment_negative_threshold,
+            news_lookback_days=settings.news_lookback_days,
+        )
+    open_views = [v for v in views if v.get("status") == "open"]
+    if not open_views:
+        return ""
+
+    lines = ["📊 Your holdings"]
+    for v in open_views:
+        pc = v.get("price_change_pct")
+        conv_change = v.get("conviction_change", 0) or 0
+        price_str = f"{pc:+.1%}" if pc is not None else "—"
+        # "On track" = up vs entry AND the model's conviction hasn't eroded.
+        on_track = " ✅ on track" if (pc is not None and pc > 0 and conv_change >= 0) else ""
+        lines.append(
+            f"{v['ticker']}: {v.get('signal', '')} · {price_str} · "
+            f"conv {v.get('entry_conviction')}→{v.get('current_conviction')}{on_track}"
+        )
+    return "\n".join(lines)
+
 
 
 def send_weekly_digest(settings: Settings) -> None:
@@ -257,6 +444,13 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
         "interval",
         hours=1,
         id="holdings_news",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        lambda: _safe(check_holdings_signals, settings, notifier),
+        "interval",
+        hours=1,
+        id="holdings_signals",
         replace_existing=True,
     )
     scheduler.add_job(

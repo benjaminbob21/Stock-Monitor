@@ -141,6 +141,16 @@ class Settings(BaseSettings):
     # Run the scheduler in-process with the API (set True in production/containers).
     run_scheduler: bool = False
 
+    # Holdings alerts — proactive Telegram pings on the positions you track.
+    # Urgent (hourly): a holding's exit signal newly turns to "consider selling",
+    # a take-profit milestone, or a sharp one-day move. Routine trim/hold reads go
+    # into the daily digest instead. All alerts are debounced so you get one ping
+    # per event, not repeated nagging.
+    holdings_alert_debounce_hours: int = 24  # generic per-holding alert cooldown
+    take_profit_pct: float = 0.20  # ping when a holding is up ≥ this vs your entry
+    take_profit_cooldown_hours: int = 168  # re-nudge at most weekly as it keeps climbing
+    sharp_move_pct: float = 0.07  # ping when a holding moves ≥ this in a single day
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

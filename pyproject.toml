@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
     "numpy",
     "pandas<3",
+    "lxml",
     "scikit-learn",
     "lightgbm",
     "shap",

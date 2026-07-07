@@ -36,7 +36,7 @@ def test_fetch_sp500_falls_back_when_offline(monkeypatch, tmp_path) -> None:
     def _boom(*_args, **_kwargs):
         raise RuntimeError("offline")
 
-    import pandas as pd
+    import requests
 
-    monkeypatch.setattr(pd, "read_html", _boom)
+    monkeypatch.setattr(requests, "get", _boom)
     assert universe.fetch_sp500_symbols() == list(DEFAULT_UNIVERSE)

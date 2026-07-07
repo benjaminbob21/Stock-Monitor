@@ -82,9 +82,20 @@ def fetch_sp500_symbols(*, use_cache: bool = True) -> list[str]:
             pass
 
     try:
-        import pandas as pd
+        from io import StringIO
 
-        tables = pd.read_html(_SP500_WIKI_URL)
+        import pandas as pd
+        import requests
+
+        # Wikipedia blocks the default urllib user-agent (HTTP 403), so fetch the page
+        # ourselves with a browser-like UA and hand the HTML to pandas.
+        resp = requests.get(
+            _SP500_WIKI_URL,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; stock-monitor/1.0)"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text))
         symbols = [_normalize(s) for s in tables[0]["Symbol"].astype(str).tolist()]
         merged = sorted({*symbols, *(_normalize(s) for s in DEFAULT_UNIVERSE)})
         if merged:

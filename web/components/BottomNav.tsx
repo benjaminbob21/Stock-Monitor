@@ -48,7 +48,15 @@ type IconProps = { active: boolean };
 
 function BarsIcon({ active }: IconProps) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.3 : 1.9} strokeLinecap="round">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.3 : 1.9}
+      strokeLinecap="round"
+    >
       <path d="M5 20V10M12 20V4M19 20v-7" />
     </svg>
   );
@@ -56,7 +64,16 @@ function BarsIcon({ active }: IconProps) {
 
 function BoltIcon({ active }: IconProps) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.3 : 1.9} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.3 : 1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
     </svg>
   );
@@ -64,7 +81,15 @@ function BoltIcon({ active }: IconProps) {
 
 function WalletIcon({ active }: IconProps) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.3 : 1.9} strokeLinejoin="round">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.3 : 1.9}
+      strokeLinejoin="round"
+    >
       <rect x="3" y="6" width="18" height="14" rx="3" />
       <path d="M3 10h18" />
       <circle cx="16.5" cy="14" r="1.2" fill="currentColor" stroke="none" />
@@ -74,7 +99,15 @@ function WalletIcon({ active }: IconProps) {
 
 function SearchIcon({ active }: IconProps) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.3 : 1.9} strokeLinecap="round">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.3 : 1.9}
+      strokeLinecap="round"
+    >
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.5-3.5" />
     </svg>

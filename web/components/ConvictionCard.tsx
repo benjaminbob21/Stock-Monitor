@@ -76,24 +76,29 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
         data.near_term_note && (
           <div className="horizon">
             <span>
-              <b>near-term</b> {data.recommendation_3m ?? "no clear near-term signal"}
+              <b>near-term</b>{" "}
+              {data.recommendation_3m ?? "no clear near-term signal"}
             </span>
             <span className="near-term-note">{data.near_term_note}</span>
           </div>
         )}
 
-      {data.days_to_earnings !== null && data.days_to_earnings !== undefined && (
-        <p
-          className="earnings"
-          style={{
-            color: data.days_to_earnings <= 5 ? "var(--orange)" : "var(--muted)",
-          }}
-        >
-          📅 Earnings in {data.days_to_earnings} day
-          {data.days_to_earnings === 1 ? "" : "s"}
-          {data.days_to_earnings <= 5 ? " — expect volatility (score capped)" : ""}
-        </p>
-      )}
+      {data.days_to_earnings !== null &&
+        data.days_to_earnings !== undefined && (
+          <p
+            className="earnings"
+            style={{
+              color:
+                data.days_to_earnings <= 5 ? "var(--orange)" : "var(--muted)",
+            }}
+          >
+            📅 Earnings in {data.days_to_earnings} day
+            {data.days_to_earnings === 1 ? "" : "s"}
+            {data.days_to_earnings <= 5
+              ? " — expect volatility (score capped)"
+              : ""}
+          </p>
+        )}
 
       <p className="section-label">Top drivers (SHAP)</p>
       <DriverBars drivers={data.drivers} />

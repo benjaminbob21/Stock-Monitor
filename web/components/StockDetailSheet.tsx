@@ -30,10 +30,29 @@ export function StockDetailSheet({
   tracked?: boolean;
 }) {
   return (
-    <div className="sheet" role="dialog" aria-modal="true" aria-label={`${ticker} analysis`}>
+    <div
+      className="sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${ticker} analysis`}
+    >
       <header className="sheet-bar">
-        <button type="button" className="sheet-back" onClick={onClose} aria-label="Back to list">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round">
+        <button
+          type="button"
+          className="sheet-back"
+          onClick={onClose}
+          aria-label="Back to list"
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.1}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="m15 18-6-6 6-6" />
           </svg>
         </button>
@@ -52,7 +71,17 @@ export function StockDetailSheet({
           >
             {tracked ? (
               <>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <path d="M20 6 9 17l-5-5" />
                 </svg>
                 Tracked
@@ -61,7 +90,17 @@ export function StockDetailSheet({
               "Adding…"
             ) : (
               <>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 Add
@@ -74,9 +113,7 @@ export function StockDetailSheet({
       </header>
 
       <div className="sheet-body">
-        {loading && (
-          <div className="status">Scoring {ticker}…</div>
-        )}
+        {loading && <div className="status">Scoring {ticker}…</div>}
         {error && <div className="status error">{error}</div>}
         {data && <ConvictionCard data={data} />}
         {data && ticker && <PriceChart ticker={ticker} />}

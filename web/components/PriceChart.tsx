@@ -23,7 +23,9 @@ const RANGES: Range[] = [
 // Read a CSS custom property off :root so the canvas matches the design tokens.
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
   return v || fallback;
 }
 
@@ -159,9 +161,7 @@ export function PriceChart({ ticker }: { ticker: string }) {
   }, [bars]);
 
   const change =
-    last && bars && bars.length > 1
-      ? last.close - bars[0].open
-      : 0;
+    last && bars && bars.length > 1 ? last.close - bars[0].open : 0;
   const changePct =
     last && bars && bars.length > 1 && bars[0].open
       ? (change / bars[0].open) * 100
@@ -179,14 +179,19 @@ export function PriceChart({ ticker }: { ticker: string }) {
                 className={`chart-chg ${up ? "up" : "down"}`}
                 aria-label={`${up ? "up" : "down"} ${Math.abs(changePct).toFixed(2)} percent over ${range.label}`}
               >
-                {up ? "▲" : "▼"} {Math.abs(change).toFixed(2)} ({Math.abs(changePct).toFixed(2)}%)
+                {up ? "▲" : "▼"} {Math.abs(change).toFixed(2)} (
+                {Math.abs(changePct).toFixed(2)}%)
               </span>
             </>
           ) : (
             <span className="chart-last muted">—</span>
           )}
         </div>
-        <div className="chart-ranges" role="group" aria-label="Chart time range">
+        <div
+          className="chart-ranges"
+          role="group"
+          aria-label="Chart time range"
+        >
           {RANGES.map((r) => (
             <button
               key={r.label}
@@ -210,7 +215,9 @@ export function PriceChart({ ticker }: { ticker: string }) {
         <div
           ref={containerRef}
           className="chart-canvas"
-          style={{ opacity: loading || error || (bars && bars.length === 0) ? 0 : 1 }}
+          style={{
+            opacity: loading || error || (bars && bars.length === 0) ? 0 : 1,
+          }}
         />
       </div>
     </section>

@@ -31,12 +31,18 @@ export function AnalystCard({ analyst }: { analyst: AnalystResponse | null }) {
         <span className="analyst-badge">AI second opinion</span>
         <span
           className="analyst-verdict"
-          style={{ color, background: `${color}22`, border: `1px solid ${color}55` }}
+          style={{
+            color,
+            background: `${color}22`,
+            border: `1px solid ${color}55`,
+          }}
         >
           {op.opinion}
         </span>
         <span className="analyst-conf">{op.confidence} confidence</span>
-        <span className={`analyst-agree ${op.agrees_with_model ? "agree" : "disagree"}`}>
+        <span
+          className={`analyst-agree ${op.agrees_with_model ? "agree" : "disagree"}`}
+        >
           {op.agrees_with_model ? "agrees with model" : "pushes back on model"}
         </span>
       </p>

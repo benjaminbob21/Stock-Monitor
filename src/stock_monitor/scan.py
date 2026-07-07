@@ -142,7 +142,7 @@ def scan_job(
     from stock_monitor.notify import get_notifier
     from stock_monitor.providers.edgar_provider import EdgarProvider
     from stock_monitor.providers.yfinance_provider import YFinanceProvider
-    from stock_monitor.universe import get_universe
+    from stock_monitor.universe import get_scan_universe
 
     if model is None:
         model = load_model(settings.model_path)  # type: ignore[attr-defined]
@@ -153,7 +153,7 @@ def scan_job(
     fundamental_provider = fundamental_provider or EdgarProvider()
     notifier = notifier or get_notifier(settings)  # type: ignore[arg-type]
     threshold = settings.alert_conviction_threshold  # type: ignore[attr-defined]
-    tickers = universe if universe is not None else get_universe()
+    tickers = universe if universe is not None else get_scan_universe(settings)
 
     started = dt.datetime.now()
     ranked = run_scan(

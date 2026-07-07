@@ -139,6 +139,18 @@ CREATE TABLE IF NOT EXISTS news_sentiment (
     ingested_at TIMESTAMP DEFAULT now(),
     PRIMARY KEY (ticker, date)
 );
+
+CREATE TABLE IF NOT EXISTS news_articles (
+    ticker VARCHAR NOT NULL,
+    published TIMESTAMP NOT NULL,
+    headline VARCHAR NOT NULL,
+    source VARCHAR,
+    url VARCHAR,
+    sentiment DOUBLE,
+    backend VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (ticker, published, headline)
+);
 """
 
 
@@ -254,7 +266,7 @@ class Storage:
         """Return the row count of one of the known tables."""
         if table not in {
             "features", "scores", "quarantine", "opportunities", "runs", "positions",
-            "alerts", "paper_picks", "news_sentiment",
+            "alerts", "paper_picks", "news_sentiment", "news_articles",
         }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
@@ -478,6 +490,52 @@ class Storage:
             ).df()
         return self._con.execute(
             "SELECT * FROM news_sentiment ORDER BY ticker, date"
+        ).df()
+
+    def upsert_news_articles(self, df: pd.DataFrame) -> int:
+        """Upsert raw news headlines (permanent archive). Returns rows written.
+
+        Expected columns: ``ticker``, ``published`` (datetime), ``headline``,
+        ``source``, ``url``, ``sentiment``, ``backend``. We keep the headline + link
+        (not the article body) so the news can be re-scored later without re-buying it.
+        Idempotent on (ticker, published, headline); undated rows are dropped since the
+        publish timestamp anchors the permanent key.
+        """
+        if df is None or df.empty:
+            return 0
+        cols = ["ticker", "published", "headline", "source", "url", "sentiment", "backend"]
+        frame = df[cols].copy()
+        frame = frame.dropna(subset=["published", "headline"])
+        if frame.empty:
+            return 0
+        self._con.register("_articles_tmp", frame)
+        try:
+            self._con.execute(
+                """
+                INSERT INTO news_articles
+                    (ticker, published, headline, source, url, sentiment, backend)
+                SELECT ticker, published, headline, source, url, sentiment, backend
+                FROM _articles_tmp
+                ON CONFLICT (ticker, published, headline) DO UPDATE SET
+                    source = excluded.source,
+                    url = excluded.url,
+                    sentiment = excluded.sentiment,
+                    backend = excluded.backend
+                """
+            )
+        finally:
+            self._con.unregister("_articles_tmp")
+        return int(len(frame))
+
+    def read_news_articles(self, ticker: str | None = None) -> pd.DataFrame:
+        """Return stored raw headlines, optionally for a single ticker (newest first)."""
+        if ticker:
+            return self._con.execute(
+                "SELECT * FROM news_articles WHERE ticker = ? ORDER BY published DESC",
+                [ticker.upper()],
+            ).df()
+        return self._con.execute(
+            "SELECT * FROM news_articles ORDER BY ticker, published DESC"
         ).df()
 
     # ------------------------------------------------------------------ paper mode

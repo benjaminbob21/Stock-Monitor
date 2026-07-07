@@ -131,6 +131,12 @@ class Settings(BaseSettings):
 
     # Scheduler + heartbeat.
     scan_hour: int = 22  # local hour for the daily universe scan
+    # Nightly-scan breadth: "default" (curated ~48) or "sp500" (full index, discovery).
+    # The scan runs on yfinance (no rate cap), so breadth is free.
+    scan_universe: str = "sp500"
+    # Hour to collect + archive today's news (default just before the scan, so the
+    # sentiment feature is fresh). Runs daily so we never lose a day of headlines.
+    news_collect_hour: int = 21
     heartbeat_max_age_hours: int = 26  # alert if no successful scan within this window
     # Run the scheduler in-process with the API (set True in production/containers).
     run_scheduler: bool = False

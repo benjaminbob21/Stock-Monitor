@@ -126,6 +126,51 @@ def run_paper_tracking(settings: Settings, price_provider=None) -> tuple[int, in
     return recorded, closed
 
 
+def collect_daily_news(settings: Settings) -> int:
+    """Pull, score, and permanently archive today's news for tracked names.
+
+    Runs daily so we never lose a day of headlines. Free news providers only reach back
+    ~1 year, but by snapshotting every day we accumulate an unbroken history in DuckDB
+    that we own forever — no re-subscription needed. Writes both the daily sentiment
+    aggregate (the model feature) and the raw headlines (a re-scorable archive). Returns
+    the number of headline rows archived.
+    """
+    from stock_monitor.backfill import aggregate_daily_sentiment, articles_frame
+
+    news_provider = get_news_provider(settings)
+    analyzer = get_sentiment_analyzer(settings)
+    lookback = settings.news_lookback_days
+
+    archived = 0
+    with Storage(settings.db_path) as storage:
+        holdings = {
+            p["ticker"] for p in storage.list_positions() if p["status"] == "open"
+        }
+        opportunities = {
+            o["ticker"]
+            for o in storage.read_latest_opportunities(limit=settings.digest_top_n)
+        }
+        tickers = sorted({*DEFAULT_WATCHLIST, *holdings, *opportunities})
+        for ticker in tickers:
+            try:
+                items = news_provider.get_news(ticker, lookback)
+            except Exception:  # noqa: BLE001 — one bad symbol must not abort collection
+                logger.exception("daily news fetch failed for %s", ticker)
+                continue
+            if not items:
+                continue
+            daily = aggregate_daily_sentiment(
+                ticker, items, analyzer, max_per_day=settings.news_backfill_max_per_day
+            )
+            if not daily.empty:
+                storage.upsert_news_sentiment(daily)
+            archive = articles_frame(ticker, items, analyzer)
+            if not archive.empty:
+                archived += storage.upsert_news_articles(archive)
+    logger.info("daily news collection archived %d headline rows", archived)
+    return archived
+
+
 def send_daily_digest(settings: Settings, notifier: Notifier) -> None:
     """Send a top-N digest (with paper track record) to the daily channel (Telegram)."""
     from stock_monitor.paper import compose_digest, paper_summary
@@ -212,6 +257,13 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
         "interval",
         hours=1,
         id="holdings_news",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        lambda: _safe(collect_daily_news, settings),
+        "cron",
+        hour=settings.news_collect_hour,
+        id="daily_news",
         replace_existing=True,
     )
 

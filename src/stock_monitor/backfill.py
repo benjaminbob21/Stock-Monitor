@@ -86,6 +86,46 @@ def aggregate_daily_sentiment(
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
 
 
+def articles_frame(
+    ticker: str,
+    items: list[NewsItem],
+    analyzer: SentimentAnalyzer,
+) -> pd.DataFrame:
+    """Build a raw-headline archive frame from scored news items.
+
+    Returns columns ``ticker``, ``published``, ``headline``, ``source``, ``url``,
+    ``sentiment``, ``backend`` — the durable record we keep forever so news can be
+    re-scored later without re-buying it. Undated or headline-less items are dropped
+    (the publish timestamp anchors the permanent key).
+    """
+    empty = pd.DataFrame(
+        columns=["ticker", "published", "headline", "source", "url", "sentiment", "backend"]
+    )
+    rows: list[dict[str, object]] = []
+    for item in items:
+        if item.published is None or not item.headline:
+            continue
+        rows.append(
+            {
+                "ticker": ticker.upper(),
+                "published": pd.Timestamp(item.published),
+                "headline": item.headline,
+                "source": item.source or "",
+                "url": item.url or "",
+                "sentiment": float(analyzer.score(item.headline)),
+                "backend": analyzer.name,
+            }
+        )
+    if not rows:
+        return empty
+    return (
+        pd.DataFrame(rows)
+        .drop_duplicates(subset=["ticker", "published", "headline"])
+        .sort_values("published")
+        .reset_index(drop=True)
+    )
+
+
 def make_sentiment_lookup(
     daily: pd.DataFrame,
     *,
@@ -148,6 +188,9 @@ def backfill_news(
         )
         if not frame.empty:
             written += storage.upsert_news_sentiment(frame)
+        archive = articles_frame(ticker, items, analyzer)
+        if not archive.empty:
+            storage.upsert_news_articles(archive)
     return written
 
 

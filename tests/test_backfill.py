@@ -8,6 +8,7 @@ import pandas as pd
 
 from stock_monitor.backfill import (
     aggregate_daily_sentiment,
+    articles_frame,
     backfill_news,
     make_sentiment_lookup,
 )
@@ -126,3 +127,48 @@ def test_backfill_round_trips_through_storage() -> None:
             analyzer=_KeywordAnalyzer(), today=dt.date(2024, 3, 10),
         )
         assert store.count("news_sentiment") == 2
+
+
+def test_articles_frame_scores_and_dedupes() -> None:
+    day = dt.datetime(2024, 3, 1, 10)
+    items = [
+        _item("Acme beats estimates", day),
+        _item("Acme beats estimates", day),  # exact dup -> collapsed
+        _item("Acme misses badly", dt.datetime(2024, 3, 2, 9)),
+        _item("Undated headline", None),  # dropped (no timestamp)
+    ]
+    frame = articles_frame("acme", items, _KeywordAnalyzer())
+
+    assert list(frame.columns) == [
+        "ticker", "published", "headline", "source", "url", "sentiment", "backend"
+    ]
+    assert len(frame) == 2  # dup collapsed, undated dropped
+    assert set(frame["ticker"]) == {"ACME"}
+    beats = frame[frame["headline"] == "Acme beats estimates"].iloc[0]
+    assert beats["sentiment"] == 1.0
+
+
+def test_backfill_archives_raw_headlines() -> None:
+    items = [
+        _item("Acme beats estimates", dt.datetime(2024, 3, 1, 10)),
+        _item("Acme misses badly", dt.datetime(2024, 3, 2, 10)),
+    ]
+    settings = Settings(news_backfill_years=5, news_backfill_max_per_day=50)
+    provider = _FakeRangeProvider(items)
+
+    with Storage(":memory:") as store:
+        backfill_news(
+            settings, provider, store, ["ACME"],
+            analyzer=_KeywordAnalyzer(), today=dt.date(2024, 3, 10),
+        )
+        archived = store.read_news_articles("ACME")
+        assert len(archived) == 2
+        assert store.count("news_articles") == 2
+
+        # Re-running is idempotent (upsert on (ticker, published, headline)).
+        backfill_news(
+            settings, provider, store, ["ACME"],
+            analyzer=_KeywordAnalyzer(), today=dt.date(2024, 3, 10),
+        )
+        assert store.count("news_articles") == 2
+

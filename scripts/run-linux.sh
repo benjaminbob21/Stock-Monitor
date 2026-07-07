@@ -69,4 +69,13 @@ sleep 3
 
 echo "exposing a STABLE public URL via Tailscale Funnel…"
 echo "add this URL to Vercel STOCK_MONITOR_API_URL (comma-separated with your other backend):"
-tailscale funnel "${PORT}"
+# --bg persists the serve config in tailscaled's state, so it survives the VM
+# pausing/resuming on laptop sleep (a foreground `tailscale funnel` would lose
+# its config on reconnect and silently break the public URL while uvicorn kept
+# running). tailscaled re-applies the stored config automatically on wake.
+tailscale funnel --bg "${PORT}"
+tailscale funnel status || true
+
+# Keep this script (and thus the systemd unit) alive by waiting on uvicorn.
+# If uvicorn dies, we exit non-zero so systemd restarts the whole thing.
+wait "${pids[@]}"

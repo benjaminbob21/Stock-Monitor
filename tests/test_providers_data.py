@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pandas as pd
-
 from stock_monitor.config import Settings
 from stock_monitor.providers import get_price_provider
 from stock_monitor.providers.base import PRICE_COLUMNS, PriceProvider

@@ -33,7 +33,6 @@ from stock_monitor.positions import (
     open_position,
     sell_position,
 )
-from stock_monitor.providers import get_price_provider
 from stock_monitor.providers.edgar_provider import EdgarProvider
 from stock_monitor.sentiment import (
     NewsProvider,
@@ -93,6 +92,27 @@ _PRICE_CACHE_LOCK = threading.Lock()
 _PRICE_CACHE_TTL_SECONDS = 3600.0
 
 
+def _score_price_provider(settings: object) -> object:
+    """Price source for on-demand scoring and charts.
+
+    Served from the local price cache (``data/prices.duckdb``) with a yfinance
+    upstream — the same source the daily scan uses. This keeps the on-demand card
+    and the ranked list on identical prices, and (critically) never touches Tiingo's
+    ~50-req/hr free-tier cap, which was 429-ing every single-ticker click. Cached
+    universe names read straight from disk; a searched ticker not yet in the cache is
+    fetched once from yfinance and stored (``fetch_missing=True``).
+    """
+    from stock_monitor.providers.price_cache import CachedPriceProvider, PriceCache
+    from stock_monitor.providers.yfinance_provider import YFinanceProvider
+
+    upstream = YFinanceProvider()
+    if getattr(settings, "use_price_cache", True):
+        return CachedPriceProvider(
+            upstream, PriceCache(settings.price_cache_path), fetch_missing=True
+        )
+    return upstream
+
+
 def build_state() -> AppState:
     """Construct the default production state (loads the persisted model)."""
     settings = get_settings()
@@ -101,7 +121,7 @@ def build_state() -> AppState:
     return AppState(
         model=model,
         model_version=version,
-        price_provider=get_price_provider(settings),
+        price_provider=_score_price_provider(settings),
         fundamental_provider=EdgarProvider(),
         db_path=settings.db_path,
         label_window_months=settings.label_window_months,

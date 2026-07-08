@@ -164,7 +164,7 @@ def make_sentiment_lookup(
 
     def lookup(as_of: dt.date) -> float:
         lo = as_of - dt.timedelta(days=window_days)
-        window = [v for d, v in zip(dates, values) if lo <= d <= as_of]
+        window = [v for d, v in zip(dates, values, strict=True) if lo <= d <= as_of]
         return float(sum(window) / len(window)) if window else 0.0
 
     return lookup

@@ -9,6 +9,8 @@ historical-membership universe is the Phase 3/5 expansion path.
 
 from __future__ import annotations
 
+import os
+
 # ~48 liquid names across sectors (a starter universe, easily expanded). Kept under
 # Tiingo's free 50-requests/hour cap so a full daily scan stays reliable and $0. The
 # scan skips any ticker that fails, so this can grow, but scaling to hundreds wants a
@@ -47,9 +49,7 @@ def get_universe() -> list[str]:
 _SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
 
-def _cache_path() -> "os.PathLike[str] | str":
-    import os
-
+def _cache_path() -> os.PathLike[str] | str:
     root = os.environ.get("STOCK_MONITOR_DATA_DIR", "data")
     return os.path.join(root, "sp500_symbols.json")
 

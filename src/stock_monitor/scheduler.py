@@ -413,6 +413,31 @@ def run_retrain(settings: Settings) -> None:
         logger.exception("model hot-reload failed (new model is still on disk)")
 
 
+def refresh_price_cache_job(settings: Settings) -> None:
+    """Append the newest Tiingo bars per universe name into the persistent price cache.
+
+    Runs daily so training always has up-to-date prices without ever re-downloading
+    decades of history (and without brushing Tiingo's free-tier hourly cap). Gap-only
+    and throttled, so it stays well under the limit.
+    """
+    from stock_monitor.pipeline import BENCHMARK
+    from stock_monitor.providers import get_price_provider
+    from stock_monitor.providers.price_cache import PriceCache, refresh_price_cache
+    from stock_monitor.universe import get_universe
+
+    upstream = get_price_provider(settings)
+    cache = PriceCache(settings.price_cache_path)
+    tickers = sorted({BENCHMARK, *get_universe()})
+    added = refresh_price_cache(
+        upstream,
+        cache,
+        tickers,
+        history_years=settings.training_history_years,
+        throttle_seconds=2.0,
+    )
+    logger.info("price cache append: %d names, %d rows added", len(added), sum(added.values()))
+
+
 def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
     """Register the tiered jobs on any APScheduler instance."""
     scheduler.add_job(
@@ -488,6 +513,14 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
             day_of_week=settings.retrain_day_of_week,
             hour=settings.retrain_hour,
             id="weekly_retrain",
+            replace_existing=True,
+        )
+    if settings.use_price_cache:
+        scheduler.add_job(
+            lambda: _safe(refresh_price_cache_job, settings),
+            "cron",
+            hour=settings.price_cache_refresh_hour,
+            id="price_cache_refresh",
             replace_existing=True,
         )
 

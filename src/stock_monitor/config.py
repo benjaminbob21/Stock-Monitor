@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     # Preferred price source: "yfinance" (default, no key), "tiingo", or "eodhd".
     price_provider: str = "yfinance"
 
+    # Persistent price cache (build a local Tiingo history store so retrains never
+    # re-download decades of data and never brush Tiingo's ~50-req/hr free-tier cap).
+    # When True, TRAINING reads prices purely from this cache (zero upstream calls);
+    # a daily append job pulls only the newest bars so nothing is lost going forward.
+    use_price_cache: bool = True
+    price_cache_path: str = "data/prices.duckdb"
+    price_cache_refresh_hour: int = 20  # daily hour to append the newest bars per name
+
     # Historical-news backfill (learn-from-history). Only used by the backfill job.
     news_backfill_years: int = 5  # how far back to pull + score news for the feature
     news_backfill_max_per_day: int = 50  # cap articles/day to keep scoring bounded

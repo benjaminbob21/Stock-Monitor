@@ -152,6 +152,24 @@ def _log_mlflow(
         mlflow.log_artifact(settings.model_path)
 
 
+def _training_price_provider(settings: Settings) -> PriceProvider:
+    """Price source for TRAINING: the persistent cache (read-only) when enabled.
+
+    Reading purely from the local cache means a retrain makes zero upstream requests
+    (so it can never hit Tiingo's free-tier rate limit) and always trains on the exact
+    prices we already vetted and stored. The cache is kept current by the daily append
+    job; if it's empty, fill it first (``scripts/fill_price_cache.py``).
+    """
+    upstream = get_price_provider(settings)
+    if not settings.use_price_cache:
+        return upstream
+    from stock_monitor.providers.price_cache import CachedPriceProvider, PriceCache
+
+    return CachedPriceProvider(
+        upstream, PriceCache(settings.price_cache_path), fetch_missing=False
+    )
+
+
 def run_training(
     watchlist: list[str],
     settings: Settings | None = None,
@@ -161,7 +179,7 @@ def run_training(
 ) -> TrainingResult:
     """Run the full pipeline and return a summary. Providers are injectable for tests."""
     settings = settings or get_settings()
-    price_provider = price_provider or get_price_provider(settings)
+    price_provider = price_provider or _training_price_provider(settings)
     fundamental_provider = fundamental_provider or EdgarProvider()
 
     long_h = settings.label_window_months

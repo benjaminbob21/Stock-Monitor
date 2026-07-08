@@ -413,6 +413,51 @@ def run_retrain(settings: Settings) -> None:
         logger.exception("model hot-reload failed (new model is still on disk)")
 
 
+def run_backtest_job(settings: Settings) -> None:
+    """Run a full-universe walk-forward backtest and store it for the edge scorecard.
+
+    Uses yfinance (no rate cap) for prices + EDGAR for fundamentals, so it's safe to run
+    weekly regardless of the Tiingo budget. Result is persisted to the main DB.
+    """
+    from stock_monitor.backtest import _fetch, run_backtest
+    from stock_monitor.providers.edgar_provider import EdgarProvider
+    from stock_monitor.providers.yfinance_provider import YFinanceProvider
+    from stock_monitor.universe import get_universe
+
+    tickers = [t.upper() for t in get_universe()]
+    frame, price_frames, benchmark = _fetch(
+        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months
+    )
+    result = run_backtest(
+        frame,
+        price_frames,
+        benchmark,
+        top_k=3,
+        cost_bps=10.0,
+        embargo_months=settings.label_window_months,
+    )
+    with Storage(settings.db_path) as store:
+        store.save_backtest_result(
+            n_periods=result.n_periods,
+            universe_size=len(tickers),
+            top_k=3,
+            cost_bps=result.cost_bps,
+            strategy_total_return=result.strategy_total_return,
+            benchmark_total_return=result.benchmark_total_return,
+            excess_return=result.excess_return,
+            strategy_cagr=result.strategy_cagr,
+            benchmark_cagr=result.benchmark_cagr,
+            max_drawdown=result.max_drawdown,
+            hit_rate=result.hit_rate,
+        )
+    logger.info(
+        "backtest stored: excess %.2f%% hit %.0f%% over %d months",
+        result.excess_return * 100,
+        result.hit_rate * 100,
+        result.n_periods,
+    )
+
+
 def refresh_price_cache_job(settings: Settings) -> None:
     """Append the newest Tiingo bars per universe name into the persistent price cache.
 
@@ -521,6 +566,15 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
             "cron",
             hour=settings.price_cache_refresh_hour,
             id="price_cache_refresh",
+            replace_existing=True,
+        )
+    if settings.backtest_weekly:
+        scheduler.add_job(
+            lambda: _safe(run_backtest_job, settings),
+            "cron",
+            day_of_week=settings.retrain_day_of_week,
+            hour=settings.backtest_hour,
+            id="weekly_backtest",
             replace_existing=True,
         )
 

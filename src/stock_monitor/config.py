@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     retrain_day_of_week: str = "sun"
     retrain_hour: int = 3
 
+    # Weekly walk-forward backtest that feeds the edge scorecard (historical half).
+    backtest_weekly: bool = True
+    backtest_hour: int = 4  # runs after the weekly retrain, same day
+
     # LLM "AI analyst" second opinion (optional, has per-call cost). Empty key = disabled.
     llm_analyst_enabled: bool = False
     openai_api_key: str = ""

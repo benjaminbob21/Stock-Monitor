@@ -424,6 +424,22 @@ def paper_summary_endpoint(state: StateDep) -> dict[str, object]:
     return {"summary": summary, "note": note}
 
 
+@app.get("/scorecard")
+def scorecard_endpoint(state: StateDep) -> dict[str, object]:
+    """Edge scorecard: a plain 🟢/🟡/🔴 verdict on whether the model has proven itself.
+
+    Combines the historical backtest (beat SPY?) with the live paper track record
+    (are the simulated buys beating SPY as they mature?) into one honest answer to
+    "is it safe to trust this with real money yet?".
+    """
+    from stock_monitor.scorecard import build_scorecard
+
+    if not state.db_path:
+        return {"verdict": "building", "note": "storage unavailable"}
+    with Storage(state.db_path) as store:
+        return build_scorecard(store)
+
+
 def _news_trend_from_history(sentiment: object) -> dict[str, object] | None:
     """Summarize backfilled news sentiment into a plain trajectory (recent vs prior).
 

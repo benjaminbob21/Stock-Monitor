@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BottomNav, type Tab } from "@/components/BottomNav";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
+import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { StockDetailSheet } from "@/components/StockDetailSheet";
 import type {
@@ -16,6 +17,7 @@ import type {
   PositionView,
   Recommendation,
   RecommendationsResponse,
+  Scorecard,
   ScanStatus,
   ScoreResponse,
 } from "@/lib/types";
@@ -54,6 +56,8 @@ export default function Home() {
   const [addBusy, setAddBusy] = useState(false);
   const [posNote, setPosNote] = useState<string | null>(null);
 
+  const [scorecard, setScorecard] = useState<Scorecard | null>(null);
+
   const loadOpportunities = useCallback(async () => {
     try {
       const res = await fetch("/api/opportunities?limit=40");
@@ -89,6 +93,16 @@ export default function Home() {
       );
     } catch {
       setPosNote("could not reach the scoring service");
+    }
+  }, []);
+
+  const loadScorecard = useCallback(async () => {
+    try {
+      const res = await fetch("/api/scorecard");
+      const body = (await res.json()) as Scorecard;
+      if (body && body.verdict) setScorecard(body);
+    } catch {
+      // scorecard is non-critical; leave it hidden if the backend is unreachable
     }
   }, []);
 
@@ -140,7 +154,8 @@ export default function Home() {
     loadOpportunities();
     loadRecommendations();
     loadPositions();
-  }, [loadOpportunities, loadRecommendations, loadPositions]);
+    loadScorecard();
+  }, [loadOpportunities, loadRecommendations, loadPositions, loadScorecard]);
 
   // Open the full-screen analysis sheet for a ticker (from any list or search).
   const lookup = useCallback(async (symbol: string) => {
@@ -258,6 +273,7 @@ export default function Home() {
       </header>
 
       <main className="tabpanel">
+        {scorecard && <ScorecardCard data={scorecard} />}
         {tab === "opportunities" && (
           <>
             <div className="opps-header">

@@ -151,6 +151,21 @@ CREATE TABLE IF NOT EXISTS news_articles (
     ingested_at TIMESTAMP DEFAULT now(),
     PRIMARY KEY (ticker, published, headline)
 );
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+    created_at TIMESTAMP DEFAULT now(),
+    n_periods INTEGER,
+    universe_size INTEGER,
+    top_k INTEGER,
+    cost_bps DOUBLE,
+    strategy_total_return DOUBLE,
+    benchmark_total_return DOUBLE,
+    excess_return DOUBLE,
+    strategy_cagr DOUBLE,
+    benchmark_cagr DOUBLE,
+    max_drawdown DOUBLE,
+    hit_rate DOUBLE
+);
 """
 
 
@@ -266,7 +281,7 @@ class Storage:
         """Return the row count of one of the known tables."""
         if table not in {
             "features", "scores", "quarantine", "opportunities", "runs", "positions",
-            "alerts", "paper_picks", "news_sentiment", "news_articles",
+            "alerts", "paper_picks", "news_sentiment", "news_articles", "backtest_results",
         }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
@@ -649,3 +664,63 @@ class Storage:
                 excess_return, beat_benchmark, pick_id,
             ],
         )
+
+    def save_backtest_result(
+        self,
+        *,
+        n_periods: int,
+        universe_size: int,
+        top_k: int,
+        cost_bps: float,
+        strategy_total_return: float,
+        benchmark_total_return: float,
+        excess_return: float,
+        strategy_cagr: float,
+        benchmark_cagr: float,
+        max_drawdown: float,
+        hit_rate: float,
+    ) -> None:
+        """Persist one walk-forward backtest run (the historical half of the scorecard)."""
+        self._con.execute(
+            """
+            INSERT INTO backtest_results
+                (n_periods, universe_size, top_k, cost_bps, strategy_total_return,
+                 benchmark_total_return, excess_return, strategy_cagr, benchmark_cagr,
+                 max_drawdown, hit_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                n_periods, universe_size, top_k, cost_bps, strategy_total_return,
+                benchmark_total_return, excess_return, strategy_cagr, benchmark_cagr,
+                max_drawdown, hit_rate,
+            ],
+        )
+
+    def latest_backtest(self) -> dict | None:
+        """Return the most recent stored backtest result, or ``None`` if none exist."""
+        row = self._con.execute(
+            """
+            SELECT created_at, n_periods, universe_size, top_k, cost_bps,
+                   strategy_total_return, benchmark_total_return, excess_return,
+                   strategy_cagr, benchmark_cagr, max_drawdown, hit_rate
+            FROM backtest_results
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "created_at": row[0].isoformat() if row[0] is not None else None,
+            "n_periods": row[1],
+            "universe_size": row[2],
+            "top_k": row[3],
+            "cost_bps": row[4],
+            "strategy_total_return": row[5],
+            "benchmark_total_return": row[6],
+            "excess_return": row[7],
+            "strategy_cagr": row[8],
+            "benchmark_cagr": row[9],
+            "max_drawdown": row[10],
+            "hit_rate": row[11],
+        }

@@ -121,3 +121,38 @@ export interface NewsResponse {
   backend: string;
   items: NewsItem[];
 }
+
+export type SignalStatus = "pass" | "fail" | "pending";
+
+export interface ScorecardBacktest {
+  status: SignalStatus;
+  message: string;
+  excess_return?: number | null;
+  hit_rate?: number | null;
+  strategy_total_return?: number | null;
+  benchmark_total_return?: number | null;
+  n_periods?: number | null;
+  universe_size?: number | null;
+  created_at?: string | null;
+}
+
+export interface ScorecardPaper {
+  status: SignalStatus;
+  message: string;
+  closed: number;
+  open: number;
+  hit_rate: number | null;
+  avg_excess_return: number | null;
+  progress: number;
+}
+
+export interface Scorecard {
+  verdict: "confirmed" | "no_edge" | "building";
+  verdict_label: string;
+  message: string;
+  thresholds: { min_closed_picks: number; min_hit_rate: number };
+  backtest: ScorecardBacktest;
+  paper: ScorecardPaper;
+  note?: string;
+}
+

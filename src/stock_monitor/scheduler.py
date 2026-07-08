@@ -495,7 +495,7 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
     scheduler.add_job(
         lambda: _safe(
             scan_job, settings, notifier, None, None, None, list(DEFAULT_WATCHLIST),
-            "watchlist_scan",
+            "watchlist_scan", False,
         ),
         "interval",
         hours=1,

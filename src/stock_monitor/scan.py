@@ -129,6 +129,7 @@ def scan_job(
     fundamental_provider: FundamentalProvider | None = None,
     universe: list[str] | None = None,
     job_name: str = "universe_scan",
+    persist_opportunities: bool = True,
 ) -> list[dict]:
     """Run a scan: score → alert on new high-conviction → persist + heartbeat.
 
@@ -136,6 +137,11 @@ def scan_job(
     scheduling (daily universe vs hourly watchlist); production loads them from
     ``settings``. Scoring runs without a DB lock; only the brief save/heartbeat write
     holds the DuckDB file, so a running API isn't blocked.
+
+    ``persist_opportunities`` controls whether this scan *replaces* the stored ranking
+    (the "ranked opportunities" page + paper-pick source). The full universe scan owns
+    that list; the hourly watchlist scan sets this ``False`` so its handful of names
+    still fires intraday alerts without wiping the full ranking.
     """
     from stock_monitor.earnings import get_earnings_provider
     from stock_monitor.models.registry import compute_model_version, load_model
@@ -171,7 +177,8 @@ def scan_job(
         previous = storage.read_latest_opportunities(limit=1000)
         entrants = high_conviction_entrants(previous, ranked, threshold)
         finished = dt.datetime.now()
-        storage.save_opportunities(finished, ranked)
+        if persist_opportunities:
+            storage.save_opportunities(finished, ranked)
         storage.record_run(job_name, "ok", f"{len(ranked)} scored", started, finished)
 
     if entrants:

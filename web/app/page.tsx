@@ -60,7 +60,7 @@ export default function Home() {
 
   const loadOpportunities = useCallback(async () => {
     try {
-      const res = await fetch("/api/opportunities?limit=40");
+      const res = await fetch("/api/opportunities?limit=60");
       const body = (await res.json()) as OpportunitiesResponse;
       setOpps(body.opportunities ?? []);
       setScannedAt(body.scanned_at ?? null);
@@ -121,11 +121,13 @@ export default function Home() {
       }
       // Poll until the backend reports the scan has finished (cap ~15 min).
       const started = Date.now();
+      let finished = false;
       while (Date.now() - started < 15 * 60 * 1000) {
         await new Promise((r) => setTimeout(r, 3000));
         const sres = await fetch("/api/scan");
         const status = (await sres.json()) as ScanStatus;
         if (!status.running) {
+          finished = true;
           setScanNote(
             status.last_error
               ? `Refresh failed: ${status.last_error}`
@@ -137,6 +139,11 @@ export default function Home() {
           );
           break;
         }
+      }
+      if (!finished) {
+        setScanNote(
+          "Still scanning in the background — pull to refresh again in a bit.",
+        );
       }
       await Promise.all([
         loadOpportunities(),
@@ -273,7 +280,6 @@ export default function Home() {
       </header>
 
       <main className="tabpanel">
-        {scorecard && <ScorecardCard data={scorecard} />}
         {tab === "opportunities" && (
           <>
             <div className="opps-header">
@@ -306,6 +312,7 @@ export default function Home() {
 
         {tab === "recommendations" && (
           <>
+            {scorecard && <ScorecardCard data={scorecard} />}
             <div className="opps-header">
               <h2>High-confidence buys</h2>
               <span className="opps-meta">only when the model is sure</span>

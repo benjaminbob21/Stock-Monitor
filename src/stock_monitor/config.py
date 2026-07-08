@@ -143,9 +143,10 @@ class Settings(BaseSettings):
 
     # Scheduler + heartbeat.
     scan_hour: int = 22  # local hour for the daily universe scan
-    # Nightly-scan breadth: "default" (curated ~48) or "sp500" (full index, discovery).
-    # The scan runs on yfinance (no rate cap), so breadth is free.
-    scan_universe: str = "sp500"
+    # Nightly-scan breadth: "default" (curated ~48, the ranked page) or "sp500"
+    # (full index, slow discovery). The ranked page + paper picks read this list, so
+    # "default" keeps it to the names we actually track and can score reliably.
+    scan_universe: str = "default"
     # Hour to collect + archive today's news (default just before the scan, so the
     # sentiment feature is fresh). Runs daily so we never lose a day of headlines.
     news_collect_hour: int = 21

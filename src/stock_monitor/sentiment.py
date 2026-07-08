@@ -179,6 +179,10 @@ class SentimentAnalyzer(ABC):
         """Return sentiment in [-1, 1]."""
         raise NotImplementedError
 
+    def score_batch(self, texts: list[str]) -> list[float]:
+        """Score many texts at once. Default loops; backends may override for speed."""
+        return [self.score(t) for t in texts]
+
 
 class VaderAnalyzer(SentimentAnalyzer):
     """VADER with a finance-term lexicon boost (default; no heavy deps)."""
@@ -209,8 +213,8 @@ class FinBertAnalyzer(SentimentAnalyzer):
             "text-classification", model="ProsusAI/finbert"
         )
 
-    def score(self, text: str) -> float:
-        item = self._pipe(text[:512])[0]
+    @staticmethod
+    def _to_score(item: dict) -> float:
         label = str(item["label"]).lower()
         confidence = float(item["score"])
         if label == "positive":
@@ -218,6 +222,17 @@ class FinBertAnalyzer(SentimentAnalyzer):
         if label == "negative":
             return -confidence
         return 0.0
+
+    def score(self, text: str) -> float:
+        return self._to_score(self._pipe(text[:512])[0])
+
+    def score_batch(self, texts: list[str], *, batch_size: int = 64) -> list[float]:
+        """Batched FinBERT inference — far faster than one call per headline on CPU."""
+        if not texts:
+            return []
+        trimmed = [t[:512] for t in texts]
+        out = self._pipe(trimmed, batch_size=batch_size, truncation=True)
+        return [self._to_score(item) for item in out]
 
 
 def get_news_provider(settings: Settings) -> NewsProvider:

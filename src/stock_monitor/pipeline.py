@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import mlflow
 import pandas as pd
 
+from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.config import Settings, get_settings
 from stock_monitor.features.builder import FEATURE_COLUMNS, build_training_frame
 from stock_monitor.features.schema import ValidationReport, validate_features
@@ -79,8 +80,15 @@ def assemble_training_frames(
     fundamental_provider: FundamentalProvider,
     horizons: list[int],
     history_years: int = HISTORY_YEARS,
+    storage: Storage | None = None,
 ) -> dict[int, pd.DataFrame]:
-    """Fetch each ticker once and build a labelled frame per horizon (no double fetch)."""
+    """Fetch each ticker once and build a labelled frame per horizon (no double fetch).
+
+    When ``storage`` is provided, each ticker's backfilled daily news sentiment is read
+    from ``news_sentiment`` and baked into the ``sentiment`` feature PIT-correctly; with
+    no storage (or no stored news for a ticker) ``sentiment`` stays 0.0 — the
+    pre-backfill behaviour.
+    """
     end = dt.date.today()
     start = end - dt.timedelta(days=365 * history_years)
 
@@ -94,8 +102,16 @@ def assemble_training_frames(
         if prices.empty:
             continue
         facts = fundamental_provider.get_fundamentals(ticker)
+        sentiment_lookup = None
+        if storage is not None:
+            daily = storage.read_news_sentiment(ticker)
+            if not daily.empty:
+                sentiment_lookup = make_sentiment_lookup(daily)
         for horizon in horizons:
-            frame = build_training_frame(ticker, prices, facts, benchmark, horizon)
+            frame = build_training_frame(
+                ticker, prices, facts, benchmark, horizon,
+                sentiment_lookup=sentiment_lookup,
+            )
             if not frame.empty:
                 by_horizon[horizon].append(frame)
 
@@ -150,20 +166,21 @@ def run_training(
 
     long_h = settings.label_window_months
     short_h = settings.label_window_months_short
-    frames = assemble_training_frames(
-        watchlist,
-        price_provider,
-        fundamental_provider,
-        [long_h, short_h],
-        history_years=settings.training_history_years,
-    )
-    pooled = frames.get(long_h, pd.DataFrame())
-    if pooled.empty:
-        raise RuntimeError("no labelled training data could be assembled")
-
-    valid, quarantined, report = validate_features(pooled)
-
     with Storage(settings.db_path) as store:
+        frames = assemble_training_frames(
+            watchlist,
+            price_provider,
+            fundamental_provider,
+            [long_h, short_h],
+            history_years=settings.training_history_years,
+            storage=store,
+        )
+        pooled = frames.get(long_h, pd.DataFrame())
+        if pooled.empty:
+            raise RuntimeError("no labelled training data could be assembled")
+
+        valid, quarantined, report = validate_features(pooled)
+
         store.upsert_features(valid)
         store.record_quarantine(quarantined)
 

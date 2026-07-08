@@ -66,23 +66,35 @@ def aggregate_daily_sentiment(
         if len(bucket) < max_per_day:
             bucket.append(item.headline)
 
-    rows: list[dict[str, object]] = []
+    # Flatten and score every headline in one batched pass (big FinBERT speedup),
+    # then fold the scores back per day.
+    flat_headlines: list[str] = []
+    day_spans: list[tuple[dt.date, int, int]] = []
     for day, headlines in by_day.items():
         if not headlines:
             continue
-        scores = [analyzer.score(h) for h in headlines]
+        start = len(flat_headlines)
+        flat_headlines.extend(headlines)
+        day_spans.append((day, start, len(flat_headlines)))
+
+    if not flat_headlines:
+        return empty
+
+    all_scores = analyzer.score_batch(flat_headlines)
+
+    rows: list[dict[str, object]] = []
+    for day, start, end in day_spans:
+        scores = all_scores[start:end]
         rows.append(
             {
                 "ticker": ticker.upper(),
                 "date": day,
                 "sentiment": float(sum(scores) / len(scores)),
-                "article_count": len(headlines),
+                "article_count": end - start,
                 "backend": analyzer.name,
             }
         )
 
-    if not rows:
-        return empty
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
 
 

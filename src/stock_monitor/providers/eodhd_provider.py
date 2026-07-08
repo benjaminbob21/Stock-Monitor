@@ -111,18 +111,15 @@ class EODHDNewsProvider(NewsProvider):
         """Return news items published in ``[from_date, to_date]`` (historical backfill)."""
         import requests
 
-        resp = requests.get(
-            _NEWS_URL,
-            params={
-                "api_token": self._api_key,
-                "s": _eodhd_symbol(ticker),
-                "from": from_date.isoformat(),
-                "to": to_date.isoformat(),
-                "limit": limit,
-                "fmt": "json",
-            },
-            timeout=20,
-        )
+        params: dict[str, str | int] = {
+            "api_token": self._api_key,
+            "s": _eodhd_symbol(ticker),
+            "from": from_date.isoformat(),
+            "to": to_date.isoformat(),
+            "limit": limit,
+            "fmt": "json",
+        }
+        resp = requests.get(_NEWS_URL, params=params, timeout=20)
         resp.raise_for_status()
         raw = resp.json()
         if not isinstance(raw, list):

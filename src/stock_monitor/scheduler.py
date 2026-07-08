@@ -397,7 +397,7 @@ def run_retrain(settings: Settings) -> None:
         result.model_version, result.rows_trained, result.train_accuracy,
     )
     try:
-        from stock_monitor.api import app as api_app
+        import stock_monitor.api.app as api_app
         from stock_monitor.models.registry import compute_model_version, load_model
 
         if api_app._state is not None:

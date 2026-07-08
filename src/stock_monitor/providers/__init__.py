@@ -1,5 +1,9 @@
 """Data providers (prices, fundamentals) behind a swappable interface."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from stock_monitor.providers.base import (
     PRICE_COLUMNS,
     FundamentalFact,
@@ -9,8 +13,11 @@ from stock_monitor.providers.base import (
 from stock_monitor.providers.edgar_provider import EdgarProvider
 from stock_monitor.providers.yfinance_provider import YFinanceProvider
 
+if TYPE_CHECKING:
+    from stock_monitor.config import Settings
 
-def get_price_provider(settings: object | None = None) -> PriceProvider:
+
+def get_price_provider(settings: Settings | None = None) -> PriceProvider:
     """Return the configured price provider, defaulting to yfinance.
 
     Selection is driven by ``settings.price_provider`` ("yfinance" | "tiingo" | "eodhd").
@@ -20,12 +27,12 @@ def get_price_provider(settings: object | None = None) -> PriceProvider:
     if settings is None:
         return YFinanceProvider()
 
-    choice = str(getattr(settings, "price_provider", "yfinance")).lower()
-    if choice == "tiingo" and getattr(settings, "tiingo_api_key", ""):
+    choice = settings.price_provider.lower()
+    if choice == "tiingo" and settings.tiingo_api_key:
         from stock_monitor.providers.tiingo_provider import TiingoProvider
 
         return TiingoProvider(settings.tiingo_api_key)
-    if choice == "eodhd" and getattr(settings, "eodhd_api_key", ""):
+    if choice == "eodhd" and settings.eodhd_api_key:
         from stock_monitor.providers.eodhd_provider import EODHDProvider
 
         return EODHDProvider(settings.eodhd_api_key)

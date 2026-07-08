@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from stock_monitor.config import Settings
 
@@ -102,7 +103,7 @@ def second_opinion(payload: dict, settings: Settings) -> dict | None:
 
     import requests
 
-    body = {
+    body: dict[str, Any] = {
         "model": settings.llm_model,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},

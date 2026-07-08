@@ -34,7 +34,7 @@ def find_similar_setups(
     ``history`` is the stored feature table (FEATURE_COLUMNS + ``label`` + ``ticker`` +
     ``as_of``). Only rows with a known (non-null) label are eligible — a matured outcome.
     """
-    empty = {
+    empty: dict[str, object] = {
         "k": k,
         "n_history": 0,
         "base_rate": None,

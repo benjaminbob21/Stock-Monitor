@@ -18,12 +18,12 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
 from stock_monitor import __version__
-from stock_monitor.config import get_settings
+from stock_monitor.config import Settings, get_settings
 from stock_monitor.earnings import EarningsProvider, get_earnings_provider
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.models.registry import compute_model_version, load_model
@@ -49,6 +49,9 @@ from stock_monitor.service import (
     strong_recommendations,
 )
 from stock_monitor.storage.db import Storage
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 @dataclass
@@ -92,7 +95,7 @@ _PRICE_CACHE_LOCK = threading.Lock()
 _PRICE_CACHE_TTL_SECONDS = 3600.0
 
 
-def _score_price_provider(settings: object) -> object:
+def _score_price_provider(settings: Settings) -> object:
     """Price source for on-demand scoring and charts.
 
     Served from the local price cache (``data/prices.duckdb``) with a yfinance
@@ -106,7 +109,7 @@ def _score_price_provider(settings: object) -> object:
     from stock_monitor.providers.yfinance_provider import YFinanceProvider
 
     upstream = YFinanceProvider()
-    if getattr(settings, "use_price_cache", True):
+    if settings.use_price_cache:
         return CachedPriceProvider(
             upstream, PriceCache(settings.price_cache_path), fetch_missing=True
         )
@@ -460,7 +463,7 @@ def scorecard_endpoint(state: StateDep) -> dict[str, object]:
         return build_scorecard(store)
 
 
-def _news_trend_from_history(sentiment: object) -> dict[str, object] | None:
+def _news_trend_from_history(sentiment: pd.DataFrame | None) -> dict[str, object] | None:
     """Summarize backfilled news sentiment into a plain trajectory (recent vs prior).
 
     Returns direction (improving/deteriorating/flat), the recent/prior 90-day means, the

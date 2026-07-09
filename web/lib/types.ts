@@ -16,6 +16,9 @@ export interface ScoreResponse {
   drivers: Driver[];
   risk_flags: string[];
   disclaimer: string;
+  price?: number;
+  price_is_live?: boolean;
+  last_close?: number;
   conviction_3m?: number | null;
   recommendation_3m?: string | null;
   near_term_note?: string | null;
@@ -97,6 +100,7 @@ export interface PositionView {
   current_recommendation?: string;
   current_flags?: string[];
   price_change_pct?: number | null;
+  price_is_live?: boolean;
   conviction_change?: number;
   since_sold_pct?: number | null;
   sold_at?: string | null;

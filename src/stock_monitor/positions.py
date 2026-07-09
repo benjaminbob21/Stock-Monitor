@@ -189,6 +189,7 @@ def position_view(
         "current_recommendation": scored["recommendation"],
         "current_flags": flags,
         "price_change_pct": price_change,
+        "price_is_live": bool(scored.get("price_is_live", False)),
         "conviction_change": current_conviction - entry_conviction,
         "since_sold_pct": since_sold,
         "sentiment_score": sentiment_score,

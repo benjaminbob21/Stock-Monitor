@@ -156,6 +156,19 @@ def score_ticker(
     price = float(prices["close"].iloc[-1])
     days_to_earnings = _days_to_earnings(earnings_provider, ticker, end)
     capped, caps = apply_risk_caps(result.conviction, row, price, days_to_earnings)
+    # The model scores off completed daily bars (``price`` above = last close), but the
+    # *displayed* price should be live: fetch a fresh intraday quote so the card and
+    # portfolio reflect today's move, not yesterday's close. Falls back to the close
+    # when no live quote is available (weekend/after-hours/rate-limited).
+    display_price = price
+    price_is_live = False
+    try:
+        quote = price_provider.get_quote(ticker)
+    except Exception:  # noqa: BLE001 — live quote is best-effort; never break scoring
+        quote = None
+    if quote is not None and quote > 0:
+        display_price = float(quote)
+        price_is_live = True
     flags = risk_flags(row) + caps
     recommendation = recommendation_band(capped)
     drivers = [
@@ -202,7 +215,9 @@ def score_ticker(
         "as_of": as_of.isoformat(),
         "conviction": capped,
         "raw_conviction": result.conviction,
-        "price": price,
+        "price": display_price,
+        "price_is_live": price_is_live,
+        "last_close": price,
         "recommendation": recommendation,
         "calibrated": result.calibrated,
         "model_version": model_version,

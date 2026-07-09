@@ -133,7 +133,12 @@ export function StockDetailSheet({
             drivers={data.drivers}
           />
         )}
-        {data && ticker && <PriceChart ticker={ticker} />}
+        {data && ticker && (
+          <PriceChart
+            ticker={ticker}
+            livePrice={data.price_is_live ? data.price : undefined}
+          />
+        )}
         {data && <AnalystCard analyst={analyst} />}
         {news && <NewsPanel news={news} />}
       </div>

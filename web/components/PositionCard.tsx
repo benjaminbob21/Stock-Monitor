@@ -107,7 +107,15 @@ export function PositionCard({
 
       <div className="posgrid">
         <div>
-          <span className="poslabel">price</span>
+          <span className="poslabel">
+            price{" "}
+            {p.price_is_live && !sold && (
+              <span className="pos-live" title="Live price (updates when you refresh)">
+                <span className="pos-live-dot" aria-hidden />
+                live
+              </span>
+            )}
+          </span>
           <span className="posval">
             {money(p.entry_price)} → {money(p.current_price)}{" "}
             <em style={{ color: priceColor }}>{pct(p.price_change_pct)}</em>

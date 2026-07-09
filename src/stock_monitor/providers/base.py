@@ -60,6 +60,16 @@ class PriceProvider(ABC):
         """
         raise NotImplementedError
 
+    def get_quote(self, ticker: str) -> float | None:
+        """Return the latest *live* price for ``ticker``, or ``None`` if unavailable.
+
+        Optional. Daily-bar sources return the last completed close via
+        :meth:`get_prices`; only intraday-capable sources (e.g. yfinance) override
+        this to return a fresh mid-session quote. Callers must treat ``None`` as
+        "no live quote — fall back to the last daily close".
+        """
+        return None
+
 
 class FundamentalProvider(ABC):
     """Source of point-in-time fundamentals."""

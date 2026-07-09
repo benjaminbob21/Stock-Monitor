@@ -54,3 +54,22 @@ class YFinanceProvider(PriceProvider):
         df.index = pd.to_datetime(df.index).tz_localize(None)
         df.index.name = "date"
         return df.sort_index()
+
+    def get_quote(self, ticker: str) -> float | None:
+        """Latest intraday price via yfinance ``fast_info`` (no retry, best-effort).
+
+        Yahoo's ``fast_info`` returns a live last price during market hours and the
+        most recent close otherwise. It is fast and unthrottled relative to the
+        history endpoint, but can still fail transiently — any error yields ``None``
+        so the caller falls back to the last completed daily close.
+        """
+        import yfinance as yf
+
+        try:
+            fast = yf.Ticker(ticker).fast_info
+            price = float(fast.last_price)
+        except Exception:  # noqa: BLE001 — live quote is best-effort; degrade to close
+            return None
+        if price != price or price <= 0:  # NaN or non-positive
+            return None
+        return price

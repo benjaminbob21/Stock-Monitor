@@ -32,9 +32,11 @@ function cssVar(name: string, fallback: string): string {
 export function PriceChart({
   ticker,
   costBasis,
+  livePrice,
 }: {
   ticker: string;
   costBasis?: number;
+  livePrice?: number;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [range, setRange] = useState<Range>(RANGES[1]);
@@ -177,21 +179,36 @@ export function PriceChart({
     };
   }, [bars, costBasis]);
 
+  // Prefer a fresh intraday quote for the headline number when we have one; the
+  // chart line itself stays on completed daily bars. Falls back to the last close.
+  const headline =
+    livePrice && livePrice > 0 ? livePrice : last ? last.close : null;
   const change =
-    last && bars && bars.length > 1 ? last.close - bars[0].open : 0;
+    headline !== null && bars && bars.length > 1 ? headline - bars[0].open : 0;
   const changePct =
-    last && bars && bars.length > 1 && bars[0].open
+    headline !== null && bars && bars.length > 1 && bars[0].open
       ? (change / bars[0].open) * 100
       : 0;
   const up = change >= 0;
+  const isLive = Boolean(livePrice && livePrice > 0);
 
   return (
     <section className="chart-card" aria-label={`${ticker} price chart`}>
       <div className="chart-head">
         <div className="chart-price">
-          {last ? (
+          {headline !== null ? (
             <>
-              <span className="chart-last">${last.close.toFixed(2)}</span>
+              <span className="chart-last">${headline.toFixed(2)}</span>
+              {isLive ? (
+                <span className="chart-live" title="Live price (updates when you refresh)">
+                  <span className="chart-live-dot" aria-hidden />
+                  live
+                </span>
+              ) : (
+                <span className="chart-live at-close" title="Last completed close">
+                  at close
+                </span>
+              )}
               <span
                 className={`chart-chg ${up ? "up" : "down"}`}
                 aria-label={`${up ? "up" : "down"} ${Math.abs(changePct).toFixed(2)} percent over ${range.label}`}

@@ -179,6 +179,15 @@ class CachedPriceProvider(PriceProvider):
                 )
         return self._cache.read(ticker, start, end)
 
+    def get_quote(self, ticker: str) -> float | None:
+        """Delegate live quotes straight to the upstream (never cached).
+
+        Intraday prices must always be fresh, so this bypasses the daily-bar cache
+        entirely. If the upstream can't provide a live quote it returns ``None`` and
+        the caller falls back to the last completed close.
+        """
+        return self._upstream.get_quote(ticker)
+
     def _ensure(self, ticker: str, start: dt.date, end: dt.date) -> int:
         """Fetch and cache any bars in ``[start, end]`` not already stored. Returns rows added."""
         cov = self._cache.coverage(ticker)

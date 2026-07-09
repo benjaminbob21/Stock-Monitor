@@ -150,3 +150,76 @@ def second_opinion(payload: dict, settings: Settings) -> dict | None:
             "instruction to trade. The calibrated model score remains the signal of record."
         ),
     }
+
+
+_EXPLAIN_SYSTEM_PROMPT = (
+    "You explain a stock model's reasoning to a COMPLETE BEGINNER in warm, plain, "
+    "everyday English. You are given a ticker, the model's recommendation, and its top "
+    "drivers (each: a name, a value, and whether it pushed the score UP or DOWN). Write a "
+    "short flowing narrative of 2-3 sentences (<=60 words total, prose only — no lists, no "
+    "markdown, no preamble). Weave the key drivers into a story about THIS company: you may "
+    "add light, widely-known context about what the company is or does, but do NOT invent "
+    "specific figures, prices, news, or events you aren't given. Explain any finance term "
+    "in the same breath you use it. Be honest and balanced — never salesy — and NEVER give "
+    "advice or tell the user to buy or sell."
+)
+
+
+def plain_explanation(payload: dict, settings: Settings) -> str | None:
+    """Ask the LLM for a short, beginner-friendly narrative of the drivers.
+
+    Reuses an already-computed score payload (ticker, recommendation, conviction,
+    drivers) — no re-scoring — and returns plain prose, or ``None`` when disabled/failed.
+    """
+    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+        return None
+
+    import requests
+
+    drivers = [
+        {
+            "name": d.get("feature"),
+            "value": round(float(d.get("value", 0.0)), 4)
+            if d.get("value") is not None
+            else None,
+            "pushed": "up" if float(d.get("shap", 0.0)) >= 0 else "down",
+        }
+        for d in payload.get("drivers", [])
+    ]
+    evidence = {
+        "ticker": payload.get("ticker"),
+        "model_recommendation": payload.get("recommendation"),
+        "model_conviction_0_100": payload.get("conviction"),
+        "top_drivers": drivers,
+        "news_tone": payload.get("news_label"),
+    }
+
+    body: dict[str, Any] = {
+        "model": settings.llm_model,
+        "temperature": 0.45,
+        "max_tokens": 180,
+        "messages": [
+            {"role": "system", "content": _EXPLAIN_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": "Explain in plain English:\n" + json.dumps(evidence, default=str),
+            },
+        ],
+    }
+    try:
+        resp = requests.post(
+            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        content = str(resp.json()["choices"][0]["message"]["content"]).strip()
+    except Exception:  # noqa: BLE001 — the primary score must never depend on the LLM
+        logger.exception("LLM plain-explanation call failed")
+        return None
+
+    return content or None

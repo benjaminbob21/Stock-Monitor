@@ -3,14 +3,22 @@
 import { AnalystCard } from "@/components/AnalystCard";
 import { ConvictionCard } from "@/components/ConvictionCard";
 import { NewsPanel } from "@/components/NewsPanel";
+import { PlainSummaryCard } from "@/components/PlainSummaryCard";
 import { PriceChart } from "@/components/PriceChart";
-import type { AnalystResponse, NewsResponse, ScoreResponse } from "@/lib/types";
+import type {
+  AnalystResponse,
+  ExplainResponse,
+  NewsResponse,
+  ScoreResponse,
+} from "@/lib/types";
 
 export function StockDetailSheet({
   ticker,
   data,
   news,
   analyst,
+  explain,
+  explainLoading = false,
   loading,
   error,
   onClose,
@@ -22,6 +30,8 @@ export function StockDetailSheet({
   data: ScoreResponse | null;
   news: NewsResponse | null;
   analyst: AnalystResponse | null;
+  explain: ExplainResponse | null;
+  explainLoading?: boolean;
   loading: boolean;
   error: string | null;
   onClose: () => void;
@@ -79,6 +89,13 @@ export function StockDetailSheet({
         )}
         {error && <div className="status error">{error}</div>}
         {data && <ConvictionCard data={data} />}
+        {data && (
+          <PlainSummaryCard
+            summary={explain?.summary ?? null}
+            loading={explainLoading}
+            drivers={data.drivers}
+          />
+        )}
         {data && ticker && <PriceChart ticker={ticker} />}
         {data && <AnalystCard analyst={analyst} />}
         {news && <NewsPanel news={news} />}

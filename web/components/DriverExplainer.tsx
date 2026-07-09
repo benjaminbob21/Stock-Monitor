@@ -1,20 +1,19 @@
 import type { Driver } from "@/lib/types";
-import { driverLead, explainDrivers } from "@/lib/drivers";
+import { explainDrivers } from "@/lib/drivers";
 
-// Plain-English companion to the SHAP bars: a one-line "gist" plus a sentence
-// per driver, so the rationale is readable without knowing finance jargon.
+// Plain-English companion to the SHAP bars: one sentence per driver that says what
+// the term means and which way it pushed the score — so the rationale is readable
+// without knowing finance jargon. (The flowing AI narrative lives in PlainSummaryCard.)
 export function DriverExplainer({ drivers }: { drivers: Driver[] }) {
   if (!drivers || drivers.length === 0) return null;
-  const lead = driverLead(drivers);
   const items = explainDrivers(drivers);
 
   return (
     <div className="dexplain">
-      {lead && (
-        <p className="dexplain-lead">
-          <span className="dexplain-gist">In plain English</span> {lead}
-        </p>
-      )}
+      <p className="dexplain-title">
+        <span className="dexplain-gist">In plain English</span>
+        what each driver means
+      </p>
       <ul className="dexplain-list">
         {items.map((it) => (
           <li className="dexplain-item" key={it.feature}>

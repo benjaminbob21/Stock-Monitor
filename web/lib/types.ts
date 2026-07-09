@@ -38,6 +38,12 @@ export interface AnalystResponse {
   note: string | null;
 }
 
+export interface ExplainResponse {
+  ticker: string;
+  summary: string | null;
+  note?: string | null;
+}
+
 export interface ApiError {
   detail: string;
 }

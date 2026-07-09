@@ -10,6 +10,7 @@ import { StockDetailSheet } from "@/components/StockDetailSheet";
 import type {
   AnalystResponse,
   ApiError,
+  ExplainResponse,
   NewsResponse,
   OpportunitiesResponse,
   Opportunity,
@@ -36,6 +37,8 @@ export default function Home() {
   const [data, setData] = useState<ScoreResponse | null>(null);
   const [news, setNews] = useState<NewsResponse | null>(null);
   const [analyst, setAnalyst] = useState<AnalystResponse | null>(null);
+  const [explain, setExplain] = useState<ExplainResponse | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -175,6 +178,7 @@ export default function Home() {
     setData(null);
     setNews(null);
     setAnalyst(null);
+    setExplain(null);
     try {
       const res = await fetch(`/api/score/${encodeURIComponent(clean)}`);
       const body = (await res.json()) as ScoreResponse | ApiError;
@@ -182,12 +186,33 @@ export default function Home() {
         setError((body as ApiError).detail ?? `request failed (${res.status})`);
       } else {
         setData(body as ScoreResponse);
+        const score = body as ScoreResponse;
         try {
           const nres = await fetch(`/api/news/${encodeURIComponent(clean)}`);
           if (nres.ok) setNews((await nres.json()) as NewsResponse);
         } catch {
           /* news is optional */
         }
+        // AI plain-English narrative — reuses the score we just fetched (no re-score).
+        setExplainLoading(true);
+        fetch("/api/explain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: clean,
+            recommendation: score.recommendation,
+            conviction: score.conviction,
+            drivers: score.drivers,
+          }),
+        })
+          .then((eres) => (eres.ok ? eres.json() : null))
+          .then((ebody) => {
+            if (ebody) setExplain(ebody as ExplainResponse);
+          })
+          .catch(() => {
+            /* AI narrative is optional */
+          })
+          .finally(() => setExplainLoading(false));
         try {
           const ares = await fetch(`/api/analyst/${encodeURIComponent(clean)}`);
           if (ares.ok) setAnalyst((await ares.json()) as AnalystResponse);
@@ -444,6 +469,8 @@ export default function Home() {
           data={data}
           news={news}
           analyst={analyst}
+          explain={explain}
+          explainLoading={explainLoading}
           loading={loading}
           error={error}
           onClose={closeSheet}

@@ -18,9 +18,10 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from pydantic import BaseModel
 
 from stock_monitor import __version__
 from stock_monitor.config import Settings, get_settings
@@ -610,6 +611,43 @@ def analyst(ticker: str, state: StateDep) -> dict[str, object]:
         "ticker": upper,
         "opinion": opinion,
         "note": None if opinion else "AI analyst unavailable (LLM call failed).",
+    }
+
+
+class ExplainRequest(BaseModel):
+    """Score evidence the client already has — reused so /explain never re-scores."""
+
+    ticker: str
+    recommendation: str | None = None
+    conviction: int | None = None
+    drivers: list[dict[str, Any]] = []
+    news_label: str | None = None
+
+
+@app.post("/explain")
+def explain(req: ExplainRequest) -> dict[str, object]:
+    """Short, beginner-friendly AI narrative of a score's drivers (opt-in, has a cost).
+
+    Reuses the score payload the client already fetched (drivers + recommendation), so it
+    makes no extra provider calls and never re-scores. Disabled unless the LLM is
+    configured; degrades to ``None`` on any failure. Not advice — a plain-language read.
+    """
+    from stock_monitor.analyst import plain_explanation
+
+    settings = get_settings()
+    upper = req.ticker.upper()
+    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+        return {
+            "ticker": upper,
+            "summary": None,
+            "note": "AI explainer disabled — set LLM_ANALYST_ENABLED=1 and OPENAI_API_KEY.",
+        }
+
+    summary = plain_explanation(req.model_dump(), settings)
+    return {
+        "ticker": upper,
+        "summary": summary,
+        "note": None if summary else "AI explainer unavailable (LLM call failed).",
     }
 
 

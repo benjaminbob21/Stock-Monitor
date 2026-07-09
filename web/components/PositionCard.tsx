@@ -17,6 +17,34 @@ function money(x: number | null | undefined): string {
   return x === null || x === undefined ? "—" : `$${x.toFixed(2)}`;
 }
 
+// Calendar-aware holding length between two dates, broken into whole
+// years / months / days (so "how long have I held this" needs no mental math).
+// Zero-valued leading units are dropped; a same-day span reads "0d".
+function holdingDuration(from: string, to: Date): string {
+  const start = new Date(from);
+  if (Number.isNaN(start.getTime())) return "—";
+
+  let years = to.getFullYear() - start.getFullYear();
+  let months = to.getMonth() - start.getMonth();
+  let days = to.getDate() - start.getDate();
+
+  if (days < 0) {
+    months -= 1;
+    // Number of days in the month just before `to`.
+    days += new Date(to.getFullYear(), to.getMonth(), 0).getDate();
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years}y`);
+  if (months > 0) parts.push(`${months}mo`);
+  if (days > 0) parts.push(`${days}d`);
+  return parts.length ? parts.join(" ") : "0d";
+}
+
 // Diverging profit/loss bar: grows right (green) when up, left (red) when down,
 // from a centre "break-even" axis. Saturates at ±25% so small moves stay
 // readable. Colour is backed by the signed % text, never colour alone.
@@ -123,6 +151,12 @@ export function PositionCard({
         added {p.added_at ? new Date(p.added_at).toLocaleDateString() : "—"}
         {sold && p.sold_at
           ? ` · sold ${new Date(p.sold_at).toLocaleDateString()}`
+          : ""}
+        {p.added_at
+          ? ` · held ${holdingDuration(
+              p.added_at,
+              sold && p.sold_at ? new Date(p.sold_at) : new Date(),
+            )}`
           : ""}
       </div>
     </div>

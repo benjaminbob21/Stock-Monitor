@@ -29,7 +29,13 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-export function PriceChart({ ticker }: { ticker: string }) {
+export function PriceChart({
+  ticker,
+  costBasis,
+}: {
+  ticker: string;
+  costBasis?: number;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [range, setRange] = useState<Range>(RANGES[1]);
   const [bars, setBars] = useState<Bar[] | null>(null);
@@ -79,10 +85,11 @@ export function PriceChart({ ticker }: { ticker: string }) {
       if (disposed || !containerRef.current) return;
       const {
         createChart,
-        CandlestickSeries,
+        BaselineSeries,
         HistogramSeries,
         ColorType,
         CrosshairMode,
+        LineStyle,
       } = LWC;
 
       const green = cssVar("--green", "#34e0a1");
@@ -108,24 +115,34 @@ export function PriceChart({ ticker }: { ticker: string }) {
         autoSize: true,
       });
 
-      const candles = chart.addSeries(CandlestickSeries, {
-        upColor: green,
-        downColor: red,
-        borderUpColor: green,
-        borderDownColor: red,
-        wickUpColor: green,
-        wickDownColor: red,
+      // Baseline = cost basis when tracking a position, otherwise the period's
+      // starting price — so the line is green above the reference and red below.
+      // A clean "am I up vs what I paid?" read for a buy-and-hold, not candlesticks.
+      const baseline = costBasis && costBasis > 0 ? costBasis : bars[0].close;
+
+      const area = chart.addSeries(BaselineSeries, {
+        baseValue: { type: "price", price: baseline },
+        topLineColor: green,
+        topFillColor1: "rgba(52, 224, 161, 0.28)",
+        topFillColor2: "rgba(52, 224, 161, 0.02)",
+        bottomLineColor: red,
+        bottomFillColor1: "rgba(255, 107, 120, 0.04)",
+        bottomFillColor2: "rgba(255, 107, 120, 0.28)",
+        lineWidth: 2,
         priceLineVisible: false,
+        lastValueVisible: true,
       });
-      candles.setData(
-        bars.map((b) => ({
-          time: b.time,
-          open: b.open,
-          high: b.high,
-          low: b.low,
-          close: b.close,
-        })),
-      );
+      area.setData(bars.map((b) => ({ time: b.time, value: b.close })));
+
+      // Dashed reference line: cost basis for a holding, else the period open.
+      area.createPriceLine({
+        price: baseline,
+        color: "rgba(159, 171, 196, 0.55)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: costBasis && costBasis > 0 ? "cost" : "",
+      });
 
       const volume = chart.addSeries(HistogramSeries, {
         priceFormat: { type: "volume" },
@@ -158,7 +175,7 @@ export function PriceChart({ ticker }: { ticker: string }) {
       ro?.disconnect();
       chart?.remove();
     };
-  }, [bars]);
+  }, [bars, costBasis]);
 
   const change =
     last && bars && bars.length > 1 ? last.close - bars[0].open : 0;

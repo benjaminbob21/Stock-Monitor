@@ -26,6 +26,7 @@ from stock_monitor import __version__
 from stock_monitor.config import Settings, get_settings
 from stock_monitor.earnings import EarningsProvider, get_earnings_provider
 from stock_monitor.features.builder import build_feature_row
+from stock_monitor.metrics import SCORE_LATENCY, SCORES_SERVED
 from stock_monitor.models.registry import compute_model_version, load_model
 from stock_monitor.models.scorer import Scoreable
 from stock_monitor.positions import (
@@ -163,6 +164,10 @@ def require_api_key(request: Request) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Optionally run the scheduler in-process (one DuckDB owner) for deployments."""
     settings = get_settings()
+    if settings.metrics_enabled:
+        from stock_monitor.metrics import start_metrics_server
+
+        start_metrics_server(settings.metrics_port, settings.db_path)
     scheduler = None
     if settings.run_scheduler:
         from stock_monitor.notify import get_notifier
@@ -205,12 +210,13 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
             status_code=503,
             detail="no trained model available; run `stock-monitor-train` first",
         )
+    start = time.perf_counter()
     try:
         # Short-lived DB connection per request (DuckDB is single-writer across
         # processes, so the scan CLI can write while the API is running).
         if state.db_path:
             with Storage(state.db_path) as store:
-                return score_ticker(
+                result = score_ticker(
                     ticker,
                     model=state.model,
                     model_version=state.model_version or "unknown",
@@ -221,25 +227,33 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                     short_model=state.model_short,
                     earnings_provider=state.earnings_provider,
                 )
-        return score_ticker(
-            ticker,
-            model=state.model,
-            model_version=state.model_version or "unknown",
-            price_provider=state.price_provider,  # type: ignore[arg-type]
-            fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
-            label_window_months=state.label_window_months,
-            storage=None,
-            short_model=state.model_short,
-            earnings_provider=state.earnings_provider,
-        )
+        else:
+            result = score_ticker(
+                ticker,
+                model=state.model,
+                model_version=state.model_version or "unknown",
+                price_provider=state.price_provider,  # type: ignore[arg-type]
+                fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
+                label_window_months=state.label_window_months,
+                storage=None,
+                short_model=state.model_short,
+                earnings_provider=state.earnings_provider,
+            )
+        SCORES_SERVED.labels(outcome="ok").inc()
+        return result
     except TickerDataUnavailable as exc:
+        SCORES_SERVED.labels(outcome="no_data").inc()
         raise HTTPException(status_code=404, detail=f"no price data for {ticker.upper()}") from exc
     except InsufficientHistory as exc:
+        SCORES_SERVED.labels(outcome="insufficient_history").inc()
         raise HTTPException(
             status_code=422, detail=f"insufficient price history for {ticker.upper()}"
         ) from exc
     except DataQuarantined as exc:
+        SCORES_SERVED.labels(outcome="quarantined").inc()
         raise HTTPException(status_code=422, detail=f"data quarantined: {exc}") from exc
+    finally:
+        SCORE_LATENCY.observe(time.perf_counter() - start)
 
 
 @app.get("/opportunities")

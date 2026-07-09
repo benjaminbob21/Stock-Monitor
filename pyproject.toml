@@ -30,6 +30,7 @@ dependencies = [
     "apscheduler",
     "tenacity",
     "vaderSentiment",
+    "prometheus-client",
 ]
 
 [project.optional-dependencies]

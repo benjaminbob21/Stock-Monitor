@@ -187,6 +187,9 @@ def scan_job(
             for o in entrants
         )
         notifier.send(f"{len(entrants)} new high-conviction name(s)", body)  # type: ignore[attr-defined]
+        from stock_monitor.metrics import ALERTS_SENT
+
+        ALERTS_SENT.labels(kind="high_conviction").inc(len(entrants))
 
     return ranked
 

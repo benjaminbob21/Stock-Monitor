@@ -136,6 +136,11 @@ class Settings(BaseSettings):
     # (local dev). When set, callers must send it as the `X-API-Key` header.
     api_shared_secret: str = ""
 
+    # Operational metrics (Prometheus). Served on a localhost-only port so Prometheus
+    # scrapes it without the API key and it never rides the public Tailscale funnel.
+    metrics_enabled: bool = True
+    metrics_port: int = 9137
+
     # News / sentiment pillar.
     news_lookback_days: int = 7
     sentiment_negative_threshold: float = -0.25  # below this = material negative news

@@ -110,7 +110,9 @@ export function ScorecardCard({ data }: { data: Scorecard }) {
               edge check
             </span>
           </div>
-          <p style={{ margin: "2px 0 0", color: "var(--text)", fontSize: 12.5 }}>
+          <p
+            style={{ margin: "2px 0 0", color: "var(--text)", fontSize: 12.5 }}
+          >
             {data.message}
           </p>
         </div>
@@ -152,8 +154,7 @@ export function ScorecardCard({ data }: { data: Scorecard }) {
             />
           </div>
           <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 11 }}>
-            {paper.closed}/{needed} matured · {paper.open} in flight ·
-            {" "}
+            {paper.closed}/{needed} matured · {paper.open} in flight ·{" "}
             {paper.hit_rate !== null
               ? `${pct(paper.hit_rate)} beat SPY`
               : "no results yet"}
@@ -163,8 +164,8 @@ export function ScorecardCard({ data }: { data: Scorecard }) {
 
       <p style={{ margin: "10px 2px 0", color: "var(--muted)", fontSize: 11 }}>
         Green needs both: beat SPY in the backtest and on {needed}+ live picks
-        (win rate ≥ {pct(data.thresholds.min_hit_rate)}). Until then, treat picks
-        as a second opinion — not a buy button.
+        (win rate ≥ {pct(data.thresholds.min_hit_rate)}). Until then, treat
+        picks as a second opinion — not a buy button.
       </p>
     </section>
   );

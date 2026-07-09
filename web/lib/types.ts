@@ -155,4 +155,3 @@ export interface Scorecard {
   paper: ScorecardPaper;
   note?: string;
 }
-

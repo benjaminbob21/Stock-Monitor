@@ -1,6 +1,7 @@
 import type { ScoreResponse } from "@/lib/types";
 import { ConvictionRing } from "@/components/ConvictionRing";
 import { DriverBars } from "@/components/DriverBars";
+import { DriverExplainer } from "@/components/DriverExplainer";
 
 const REC_COLORS: Record<string, string> = {
   "consider buying": "var(--green)",
@@ -97,6 +98,7 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
 
       <p className="section-label">Top drivers (SHAP)</p>
       <DriverBars drivers={data.drivers} />
+      <DriverExplainer drivers={data.drivers} />
 
       <p className="section-label">Risk flags</p>
       <div className="flags">

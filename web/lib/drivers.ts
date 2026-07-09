@@ -39,7 +39,8 @@ const GLOSSARY: Record<string, Copy> = {
     label: "Free-cash-flow yield",
     what: "the actual spare cash the business throws off, compared with its price — higher means more cash for your money.",
     plus: "You're getting solid cash flow for the price — a plus.",
-    minus: "You're paying up relative to the cash it actually generates — a negative.",
+    minus:
+      "You're paying up relative to the cash it actually generates — a negative.",
     posShort: "the cash it generates",
     negShort: "how little cash you get for the price",
   },

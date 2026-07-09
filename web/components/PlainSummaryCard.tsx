@@ -36,8 +36,9 @@ export function PlainSummaryCard({
 
       {ai && (
         <p className="disclaimer">
-          AI-generated, plain-language read of the model’s drivers — context for a
-          human, not advice. The calibrated score remains the signal of record.
+          AI-generated, plain-language read of the model’s drivers — context for
+          a human, not advice. The calibrated score remains the signal of
+          record.
         </p>
       )}
     </div>

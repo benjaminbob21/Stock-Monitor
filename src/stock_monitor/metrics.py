@@ -57,7 +57,11 @@ class _DuckDBStateCollector(Collector):
 
     def collect(self) -> Iterable[Metric]:
         try:
-            con = duckdb.connect(self._db_path, read_only=True)
+            # Match the app's default (read-write) connection config. DuckDB forbids
+            # mixing a read_only connection with the read-write ones the API opens per
+            # request to the same file in one process ("different configuration" error),
+            # which previously raced with request handlers. We only run SELECTs here.
+            con = duckdb.connect(self._db_path)
         except Exception:  # noqa: BLE001 - a locked/missing DB must not break scraping
             return
         try:

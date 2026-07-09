@@ -153,15 +153,28 @@ def second_opinion(payload: dict, settings: Settings) -> dict | None:
 
 
 _EXPLAIN_SYSTEM_PROMPT = (
-    "You explain a stock model's reasoning to a COMPLETE BEGINNER in warm, plain, "
-    "everyday English. You are given a ticker, the model's recommendation, and its top "
-    "drivers (each: a name, a value, and whether it pushed the score UP or DOWN). Write a "
-    "short flowing narrative of 2-3 sentences (<=60 words total, prose only — no lists, no "
-    "markdown, no preamble). Weave the key drivers into a story about THIS company: you may "
-    "add light, widely-known context about what the company is or does, but do NOT invent "
-    "specific figures, prices, news, or events you aren't given. Explain any finance term "
-    "in the same breath you use it. Be honest and balanced — never salesy — and NEVER give "
-    "advice or tell the user to buy or sell."
+    "You explain WHY a stock model reached its verdict, to a COMPLETE BEGINNER, in warm, "
+    "plain, everyday English. You are given a ticker, the model's recommendation, its "
+    "conviction (0-100), and its top drivers (each: a name, a value, and whether it pushed "
+    "the score UP or DOWN). The model predicts FORWARD returns — whether the stock has room "
+    "to rise from here — NOT how it has done in the past.\n"
+    "\n"
+    "Your job is to translate the drivers into the INTUITION behind the decision, not to "
+    "define terms. For each key driver, say what it IMPLIES for the investment case and why "
+    "that pushes the score up or down — plain cause-and-effect. For example: a low earnings "
+    "yield or high valuation means the stock is expensive relative to what it earns, so "
+    "you'd be paying a lot and there's less room left to run; a strong long-term uptrend "
+    "means it has momentum on its side; a weak margin means profitability isn't giving the "
+    "model much to lean on.\n"
+    "\n"
+    "Then land ONE crisp bottom-line sentence that captures the trade-off the model is "
+    "weighing — often a 'yes, but' tension (e.g. 'a strong, rising company, but you'd be "
+    "buying it expensive, and expensive things have less room to run').\n"
+    "\n"
+    "Write 2-4 sentences of flowing prose (<=75 words total — no lists, no markdown, no "
+    "preamble). You may add light, widely-known context about what the company does, but "
+    "NEVER invent specific figures, prices, news, or events you aren't given. Be honest and "
+    "balanced — never salesy — and NEVER give advice or tell the user to buy or sell."
 )
 
 
@@ -197,7 +210,7 @@ def plain_explanation(payload: dict, settings: Settings) -> str | None:
     body: dict[str, Any] = {
         "model": settings.llm_model,
         "temperature": 0.45,
-        "max_tokens": 180,
+        "max_tokens": 220,
         "messages": [
             {"role": "system", "content": _EXPLAIN_SYSTEM_PROMPT},
             {

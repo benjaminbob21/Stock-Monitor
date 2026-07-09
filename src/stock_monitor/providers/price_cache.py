@@ -166,7 +166,17 @@ class CachedPriceProvider(PriceProvider):
 
     def get_prices(self, ticker: str, start: dt.date, end: dt.date) -> pd.DataFrame:
         if self._fetch_missing:
-            self._ensure(ticker, start, end)
+            try:
+                self._ensure(ticker, start, end)
+            except Exception:  # noqa: BLE001 — a flaky upstream must not drop a cached name
+                # Yahoo/Tiingo can rate-limit or error mid-scan. When that happens we
+                # still have good history in the cache, so serve it instead of losing
+                # the ticker entirely (this is what made scan counts fluctuate).
+                logger.warning(
+                    "price cache: upstream gap-fetch failed for %s; serving cached range",
+                    ticker,
+                    exc_info=True,
+                )
         return self._cache.read(ticker, start, end)
 
     def _ensure(self, ticker: str, start: dt.date, end: dt.date) -> int:

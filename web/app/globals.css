@@ -416,6 +416,74 @@ body.sheet-open {
   color: var(--red);
 }
 
+.scanprog {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.scanprog-ring {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+}
+
+.scanprog-track {
+  stroke: var(--border);
+}
+
+.scanprog-fill {
+  stroke: var(--green);
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.scanprog-ring.spin {
+  animation: scanprog-rotate 1s linear infinite;
+}
+
+.scanprog-ring.spin .scanprog-fill {
+  transition: none;
+}
+
+.scanprog-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-jbmono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.scanprog-ring.spin .scanprog-pct {
+  animation: scanprog-counter-rotate 1s linear infinite;
+}
+
+.scanprog-label {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+@keyframes scanprog-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes scanprog-counter-rotate {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
 .card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),

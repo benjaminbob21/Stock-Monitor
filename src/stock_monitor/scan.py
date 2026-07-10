@@ -9,7 +9,9 @@ ticker never sinks the whole scan.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -75,13 +77,19 @@ def run_scan(
     storage: Storage | None = None,
     today: dt.date | None = None,
     earnings_provider: EarningsProvider | None = None,
+    progress_cb: Callable[[int, int], None] | None = None,
 ) -> list[dict]:
-    """Score and rank the universe; persist the ranking if storage is provided."""
+    """Score and rank the universe; persist the ranking if storage is provided.
+
+    ``progress_cb(done, total)`` is invoked after each ticker (best-effort) so a caller
+    can surface live progress; a failing callback never interrupts the scan.
+    """
     end = today or dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
 
     results: list[dict] = []
-    for ticker in universe:
+    total = len(universe)
+    for i, ticker in enumerate(universe, start=1):
         try:
             scored = _score_one(
                 ticker, model, price_provider, fundamental_provider, start, end,
@@ -91,6 +99,10 @@ def run_scan(
             scored = None
         if scored is not None:
             results.append(scored)
+        if progress_cb is not None:
+            # Progress is cosmetic; a failing callback must never break the scan.
+            with contextlib.suppress(Exception):
+                progress_cb(i, total)
 
     results.sort(key=lambda r: r["capped_conviction"], reverse=True)
     for i, row in enumerate(results, start=1):
@@ -130,6 +142,7 @@ def scan_job(
     universe: list[str] | None = None,
     job_name: str = "universe_scan",
     persist_opportunities: bool = True,
+    progress_cb: Callable[[int, int], None] | None = None,
 ) -> list[dict]:
     """Run a scan: score → alert on new high-conviction → persist + heartbeat.
 
@@ -170,6 +183,7 @@ def scan_job(
         fundamental_provider,
         storage=None,
         earnings_provider=get_earnings_provider(settings),  # type: ignore[arg-type]
+        progress_cb=progress_cb,
     )
 
     entrants: list[dict] = []

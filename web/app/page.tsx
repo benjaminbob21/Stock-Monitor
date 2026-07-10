@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BottomNav, type Tab } from "@/components/BottomNav";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
+import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { StockDetailSheet } from "@/components/StockDetailSheet";
@@ -50,6 +51,7 @@ export default function Home() {
 
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
+  const [scanPct, setScanPct] = useState<number | null>(null);
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recNote, setRecNote] = useState<string | null>(null);
@@ -111,6 +113,7 @@ export default function Home() {
 
   const runScan = useCallback(async () => {
     setScanning(true);
+    setScanPct(0);
     setScanNote(
       "Refreshing — scoring the whole universe with the latest data…",
     );
@@ -120,17 +123,26 @@ export default function Home() {
       if (!res.ok) {
         setScanNote(body.detail ?? "could not start a refresh");
         setScanning(false);
+        setScanPct(null);
         return;
       }
       // Poll until the backend reports the scan has finished (cap ~15 min).
       const started = Date.now();
       let finished = false;
       while (Date.now() - started < 15 * 60 * 1000) {
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise((r) => setTimeout(r, 2000));
         const sres = await fetch("/api/scan");
         const status = (await sres.json()) as ScanStatus;
+        const prog = status.progress;
+        if (prog && prog.total > 0) {
+          setScanPct(Math.round((prog.done / prog.total) * 100));
+          setScanNote(
+            `Scoring the universe… ${prog.done} of ${prog.total} names`,
+          );
+        }
         if (!status.running) {
           finished = true;
+          setScanPct(100);
           setScanNote(
             status.last_error
               ? `Refresh failed: ${status.last_error}`
@@ -157,6 +169,7 @@ export default function Home() {
       setScanNote("could not reach the scoring service");
     } finally {
       setScanning(false);
+      setScanPct(null);
     }
   }, [loadOpportunities, loadRecommendations, loadPositions]);
 
@@ -315,7 +328,11 @@ export default function Home() {
                 onClick={runScan}
                 disabled={scanning}
               >
-                {scanning ? "Refreshing…" : "Refresh"}
+                {scanning
+                  ? scanPct !== null
+                    ? `Refreshing ${scanPct}%`
+                    : "Refreshing…"
+                  : "Refresh"}
               </button>
             </div>
             <p className="opps-meta">
@@ -323,10 +340,14 @@ export default function Home() {
                 ? `scanned ${new Date(scannedAt).toLocaleString()}`
                 : "not scanned yet"}
             </p>
-            {scanNote && (
-              <div className="status" role="status" aria-live="polite">
-                {scanNote}
-              </div>
+            {scanning ? (
+              <ScanProgress pct={scanPct} label={scanNote ?? undefined} />
+            ) : (
+              scanNote && (
+                <div className="status" role="status" aria-live="polite">
+                  {scanNote}
+                </div>
+              )
             )}
             {oppNote && <div className="status">{oppNote}</div>}
             {opps.length > 0 && (

@@ -86,6 +86,7 @@ _scan_status: dict[str, object] = {
     "last_finished": None,
     "last_count": None,
     "last_error": None,
+    "progress": None,
 }
 
 # Cache EOD price bars per (ticker, days) so the candlestick chart never hammers
@@ -404,12 +405,17 @@ def _run_scan_bg(state: AppState) -> None:
 
     settings = get_settings()
     log = logging.getLogger("stock_monitor.api")
+
+    def _progress(done: int, total: int) -> None:
+        _scan_status["progress"] = {"done": done, "total": total}
+
     try:
         ranked = scan_job(
             settings,
             model=state.model,
             price_provider=state.price_provider,  # type: ignore[arg-type]
             fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
+            progress_cb=_progress,
         )
         _scan_status["last_count"] = len(ranked)
         _scan_status["last_error"] = None
@@ -435,6 +441,7 @@ def trigger_scan(state: StateDep, background: BackgroundTasks) -> dict[str, obje
         return {"status": "already_running", **_scan_status}
     _scan_status["running"] = True
     _scan_status["last_started"] = dt.datetime.now().isoformat()
+    _scan_status["progress"] = {"done": 0, "total": 0}
     background.add_task(_run_scan_bg, state)
     return {"status": "started", **_scan_status}
 

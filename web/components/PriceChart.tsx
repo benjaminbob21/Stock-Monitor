@@ -183,11 +183,21 @@ export function PriceChart({
   // chart line itself stays on completed daily bars. Falls back to the last close.
   const headline =
     livePrice && livePrice > 0 ? livePrice : last ? last.close : null;
+  // Reference the SAME baseline the chart draws from (cost basis for a tracked
+  // position, otherwise the first bar of the selected range). This keeps the header
+  // % in lock-step with the green/red fill and dashed line, so a chart that's up over
+  // the range always shows a green gain — measured start-of-range → current.
+  const baseline =
+    costBasis && costBasis > 0
+      ? costBasis
+      : bars && bars.length > 0
+        ? bars[0].close
+        : null;
   const change =
-    headline !== null && bars && bars.length > 1 ? headline - bars[0].open : 0;
+    headline !== null && baseline !== null ? headline - baseline : 0;
   const changePct =
-    headline !== null && bars && bars.length > 1 && bars[0].open
-      ? (change / bars[0].open) * 100
+    headline !== null && baseline !== null && baseline
+      ? (change / baseline) * 100
       : 0;
   const up = change >= 0;
   const isLive = Boolean(livePrice && livePrice > 0);

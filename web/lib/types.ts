@@ -58,6 +58,7 @@ export interface ScanStatus {
   last_finished: string | null;
   last_count: number | null;
   last_error: string | null;
+  progress?: { done: number; total: number } | null;
 }
 
 export interface Opportunity {

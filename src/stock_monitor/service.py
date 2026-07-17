@@ -13,6 +13,7 @@ import pandas as pd
 
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
+from stock_monitor.macro import make_macro_lookup
 from stock_monitor.models.scorer import (
     Scoreable,
     is_low_signal,
@@ -139,7 +140,14 @@ def score_ticker(
 
     facts = fundamental_provider.get_fundamentals(ticker)
     as_of = prices.index[-1].date()
-    row = build_feature_row(ticker, prices, facts, as_of)
+    # Bake in the current macro/regime reading (PIT lookup at today) so live inference
+    # matches the trained feature distribution; without stored macro it stays NaN.
+    macro_lookup = None
+    if storage is not None:
+        macro = storage.read_macro_series()
+        if not macro.empty:
+            macro_lookup = make_macro_lookup(macro)
+    row = build_feature_row(ticker, prices, facts, as_of, macro_lookup=macro_lookup)
     if row is None:
         raise InsufficientHistory(ticker)
 

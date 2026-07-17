@@ -117,6 +117,7 @@ class Settings(BaseSettings):
     eodhd_api_key: str = ""  # EODHD: deep history + historical news (one-month backfill)
     tiingo_api_key: str = ""  # Tiingo: reliable EOD prices (free tier is generous)
     alphavantage_api_key: str = ""  # Alpha Vantage NEWS_SENTIMENT: free 25/day gap backfill
+    fred_api_key: str = ""  # FRED/ALFRED: free PIT macro series (rates, CPI, unemployment)
 
     # Preferred price source: "yfinance" (default, no key), "tiingo", or "eodhd".
     price_provider: str = "yfinance"
@@ -139,6 +140,10 @@ class Settings(BaseSettings):
     news_gap_start: str = "2024-01-10"  # ISO date; FNSPID history ends 2024-01-09
     news_gap_backfill_max_calls: int = 24  # AV calls per run (stay under the 25/day cap)
     news_gap_backfill_hour: int = 2  # nightly hour to auto-continue the gap backfill
+
+    # Macro/regime features (FRED). Refreshed nightly (idempotent, ~5 free calls); the
+    # PIT lookup uses ALFRED vintages so no future data leaks into historical rows.
+    macro_refresh_hour: int = 1
 
     # Shared secret protecting the API when exposed publicly. Empty = auth disabled
     # (local dev). When set, callers must send it as the `X-API-Key` header.

@@ -368,6 +368,26 @@ def run_av_gap_backfill(settings: Settings) -> dict[str, object] | None:
     return summary
 
 
+def run_macro_refresh(settings: Settings) -> int:
+    """Refresh the FRED macro/regime series (idempotent, ~5 free calls).
+
+    Pulls the full vintage history for each series and upserts it, so newly released
+    observations and revisions land while the PIT lookup stays leak-free. Runs in-process
+    (single DuckDB owner). Returns rows stored; no-ops (returns 0) without a FRED key.
+    """
+    if not settings.fred_api_key:
+        return 0
+
+    from stock_monitor.macro import backfill_macro
+    from stock_monitor.providers.fred_provider import FredProvider
+
+    provider = FredProvider(settings.fred_api_key)
+    with Storage(settings.db_path) as storage:
+        stored = backfill_macro(provider, storage)
+    logger.info("macro refresh: stored %d FRED observation rows", stored)
+    return stored
+
+
 def send_daily_digest(settings: Settings, notifier: Notifier) -> None:
     """Send a top-N digest (with paper track record) to the daily channel (Telegram)."""
     from stock_monitor.paper import compose_digest, paper_summary
@@ -478,13 +498,21 @@ def run_backtest_job(settings: Settings) -> None:
     weekly regardless of the Tiingo budget. Result is persisted to the main DB.
     """
     from stock_monitor.backtest import _fetch, run_backtest
+    from stock_monitor.macro import make_macro_lookup
     from stock_monitor.providers.edgar_provider import EdgarProvider
     from stock_monitor.providers.yfinance_provider import YFinanceProvider
     from stock_monitor.universe import get_universe
 
     tickers = [t.upper() for t in get_universe()]
+    # Match production features: bake in the same PIT macro/regime lookup the trainer uses.
+    macro_lookup = None
+    with Storage(settings.db_path) as store:
+        macro = store.read_macro_series()
+        if not macro.empty:
+            macro_lookup = make_macro_lookup(macro)
     frame, price_frames, benchmark = _fetch(
-        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months
+        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months,
+        macro_lookup=macro_lookup,
     )
     result = run_backtest(
         frame,
@@ -597,6 +625,16 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
             "cron",
             hour=settings.news_gap_backfill_hour,
             id="av_gap_backfill",
+            replace_existing=True,
+        )
+
+    if settings.fred_api_key:
+        # Refresh FRED macro/regime series nightly (idempotent; picks up new releases).
+        scheduler.add_job(
+            lambda: _safe(run_macro_refresh, settings),
+            "cron",
+            hour=settings.macro_refresh_hour,
+            id="macro_refresh",
             replace_existing=True,
         )
 

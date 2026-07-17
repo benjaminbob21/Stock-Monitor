@@ -35,6 +35,14 @@ FEATURE_SCHEMA = DataFrameSchema(
         "earnings_yield": Column(float, Check.in_range(-2.0, 2.0), nullable=True),
         "fcf_yield": Column(float, Check.in_range(-2.0, 2.0), nullable=True),
         "sentiment": Column(float, Check.in_range(-1.0, 1.0), nullable=True),
+        # Macro/regime pillar (same across tickers per as_of). Nullable: early history
+        # predates some series, and a missing regime reading must stay NaN. Bounds are
+        # generous — they catch corrupt values, not legitimate extremes.
+        "macro_yield_curve": Column(float, Check.in_range(-5.0, 5.0), nullable=True),
+        "macro_fed_funds": Column(float, Check.in_range(0.0, 25.0), nullable=True),
+        "macro_cpi_yoy": Column(float, Check.in_range(-20.0, 30.0), nullable=True),
+        "macro_unemployment": Column(float, Check.in_range(0.0, 50.0), nullable=True),
+        "macro_credit_spread": Column(float, Check.in_range(0.0, 25.0), nullable=True),
     },
     strict=False,  # extra columns (as_of, label, ...) pass through untouched.
     coerce=True,

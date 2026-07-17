@@ -161,6 +161,15 @@ CREATE TABLE IF NOT EXISTS news_backfill_state (
     PRIMARY KEY (provider, ticker)
 );
 
+CREATE TABLE IF NOT EXISTS macro_series (
+    series_id VARCHAR NOT NULL,
+    obs_date DATE NOT NULL,
+    realtime_start DATE NOT NULL,
+    value DOUBLE,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (series_id, obs_date, realtime_start)
+);
+
 CREATE TABLE IF NOT EXISTS backtest_results (
     created_at TIMESTAMP DEFAULT now(),
     n_periods INTEGER,
@@ -222,16 +231,15 @@ class Storage:
         if "label" in sub:
             sub["label"] = sub["label"].astype("Int64")
         self._con.register("_incoming_features", sub)
+        # Columns are internal constants (FEATURE_COLUMNS grows across phases), so build
+        # the insert list dynamically — new features (e.g. macro) flow through without a
+        # hand-edited statement, matching the forward-migration in the constructor.
+        cols = ", ".join(_FEATURE_INSERT_COLUMNS)
         try:
             self._con.execute(
-                """
-                INSERT OR REPLACE INTO features
-                    (ticker, as_of, fundamentals_known_on, mom_12_1, mom_6_1,
-                     vol_3m, rsi_14, trend_200, roe, debt_ratio, profit_margin,
-                     earnings_yield, fcf_yield, sentiment, label, ingested_at)
-                SELECT ticker, as_of, fundamentals_known_on, mom_12_1, mom_6_1,
-                       vol_3m, rsi_14, trend_200, roe, debt_ratio, profit_margin,
-                       earnings_yield, fcf_yield, sentiment, label, now()
+                f"""
+                INSERT OR REPLACE INTO features ({cols}, ingested_at)
+                SELECT {cols}, now()
                 FROM _incoming_features
                 """
             )
@@ -291,6 +299,7 @@ class Storage:
         if table not in {
             "features", "scores", "quarantine", "opportunities", "runs", "positions",
             "alerts", "paper_picks", "news_sentiment", "news_articles", "backtest_results",
+            "macro_series",
         }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
@@ -537,6 +546,41 @@ class Storage:
         """
         row = self._con.execute("SELECT MAX(date) FROM news_sentiment").fetchone()
         return row[0] if row and row[0] is not None else None
+
+    # ----------------------------------------------------------------- macro series
+    def upsert_macro_series(self, df: pd.DataFrame) -> int:
+        """Insert-or-replace macro vintages keyed by (series_id, obs_date, realtime_start)."""
+        if df is None or df.empty:
+            return 0
+        sub = df.reindex(
+            columns=["series_id", "obs_date", "realtime_start", "value"]
+        ).copy()
+        self._con.register("_incoming_macro", sub)
+        try:
+            self._con.execute(
+                """
+                INSERT OR REPLACE INTO macro_series
+                    (series_id, obs_date, realtime_start, value, ingested_at)
+                SELECT series_id, obs_date, realtime_start, value, now()
+                FROM _incoming_macro
+                """
+            )
+        finally:
+            self._con.unregister("_incoming_macro")
+        return len(sub)
+
+    def read_macro_series(self, series_id: str | None = None) -> pd.DataFrame:
+        """Return stored macro vintages, optionally for a single series."""
+        if series_id:
+            return self._con.execute(
+                "SELECT series_id, obs_date, realtime_start, value FROM macro_series "
+                "WHERE series_id = ? ORDER BY obs_date, realtime_start",
+                [series_id],
+            ).df()
+        return self._con.execute(
+            "SELECT series_id, obs_date, realtime_start, value FROM macro_series "
+            "ORDER BY series_id, obs_date, realtime_start"
+        ).df()
 
     # ------------------------------------------------------------ news backfill state
     def get_backfill_state(self, provider: str) -> dict[str, tuple[dt.date | None, bool]]:

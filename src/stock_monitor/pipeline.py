@@ -19,6 +19,7 @@ from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.config import Settings, get_settings
 from stock_monitor.features.builder import FEATURE_COLUMNS, build_training_frame
 from stock_monitor.features.schema import ValidationReport, validate_features
+from stock_monitor.macro import make_macro_lookup
 from stock_monitor.models.registry import compute_model_version, save_model
 from stock_monitor.models.scorer import SHORT_HORIZON_LGBM_PARAMS, train_calibrated_model
 from stock_monitor.providers import get_price_provider
@@ -87,7 +88,8 @@ def assemble_training_frames(
     When ``storage`` is provided, each ticker's backfilled daily news sentiment is read
     from ``news_sentiment`` and baked into the ``sentiment`` feature PIT-correctly; with
     no storage (or no stored news for a ticker) ``sentiment`` stays 0.0 — the
-    pre-backfill behaviour.
+    pre-backfill behaviour. Macro/regime features are read once from ``macro_series`` and
+    shared across every ticker (they're ticker-independent) with the same PIT guarantee.
     """
     end = dt.date.today()
     start = end - dt.timedelta(days=365 * history_years)
@@ -95,6 +97,13 @@ def assemble_training_frames(
     benchmark = price_provider.get_prices(BENCHMARK, start, end)
     if benchmark.empty:
         raise RuntimeError(f"benchmark {BENCHMARK} price history unavailable")
+
+    # Macro is the same for all tickers on a given as_of, so build the lookup once.
+    macro_lookup = None
+    if storage is not None:
+        macro = storage.read_macro_series()
+        if not macro.empty:
+            macro_lookup = make_macro_lookup(macro)
 
     by_horizon: dict[int, list[pd.DataFrame]] = {h: [] for h in horizons}
     for ticker in watchlist:
@@ -111,6 +120,7 @@ def assemble_training_frames(
             frame = build_training_frame(
                 ticker, prices, facts, benchmark, horizon,
                 sentiment_lookup=sentiment_lookup,
+                macro_lookup=macro_lookup,
             )
             if not frame.empty:
                 by_horizon[horizon].append(frame)

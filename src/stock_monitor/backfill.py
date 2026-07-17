@@ -206,6 +206,99 @@ def backfill_news(
     return written
 
 
+def backfill_gap_news(
+    settings: Settings,
+    provider: RangeNewsProvider,
+    storage: Storage,
+    tickers: list[str],
+    start: dt.date,
+    end: dt.date,
+    *,
+    analyzer: SentimentAnalyzer | None = None,
+    max_calls: int = 24,
+    throttle_seconds: float = 13.0,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> dict[str, object]:
+    """Resumable, quota-capped news backfill for the ``[start, end]`` gap window.
+
+    Walks ``tickers`` in order; for each not-yet-done name it pulls EARLIEST-first news
+    from where the last run stopped (tracked in ``news_backfill_state``), scores it with
+    the analyzer, and upserts the daily sentiment + raw archive. Stops after ``max_calls``
+    provider calls (to respect a free daily quota) or when the provider signals rate
+    limiting; the next run resumes seamlessly. Returns a summary dict.
+    """
+    import time
+
+    from stock_monitor.providers.alphavantage_provider import AlphaVantageRateLimited
+
+    analyzer = analyzer or get_sentiment_analyzer(settings)
+    state = storage.get_backfill_state(provider.name)
+    total = len(tickers)
+    calls = 0
+    rows_written = 0
+    archived = 0
+    done_count = sum(1 for t in tickers if state.get(t.upper(), (None, False))[1])
+    stopped = "complete"
+
+    for idx, raw_ticker in enumerate(tickers, start=1):
+        ticker = raw_ticker.upper()
+        if callable(progress_cb):
+            progress_cb(idx - 1, total)
+        through, done = state.get(ticker, (None, False))
+        if done:
+            continue
+        if calls >= max_calls:
+            stopped = "daily_cap"
+            break
+        resume = start if through is None else max(start, through + dt.timedelta(days=1))
+        if resume > end:
+            storage.upsert_backfill_state(provider.name, ticker, end, True)
+            done_count += 1
+            continue
+        try:
+            items = provider.get_news_range(ticker, resume, end, limit=1000)
+        except AlphaVantageRateLimited:
+            stopped = "rate_limited"
+            break
+        except Exception:  # noqa: BLE001 — one bad symbol must not abort the run
+            continue
+        calls += 1
+
+        frame = aggregate_daily_sentiment(
+            ticker, items, analyzer, max_per_day=settings.news_backfill_max_per_day
+        )
+        if not frame.empty:
+            rows_written += storage.upsert_news_sentiment(frame)
+        archive = articles_frame(ticker, items, analyzer)
+        if not archive.empty:
+            archived += storage.upsert_news_articles(archive)
+
+        # A full (== 1000) response means more remains → resume from the last article's
+        # day next time; anything less means this ticker's gap is fully covered.
+        if len(items) >= 1000:
+            last_day = max(
+                (i.published.date() for i in items if i.published), default=resume
+            )
+            storage.upsert_backfill_state(provider.name, ticker, last_day, False)
+        else:
+            storage.upsert_backfill_state(provider.name, ticker, end, True)
+            done_count += 1
+
+        if calls < max_calls:
+            time.sleep(throttle_seconds)
+
+    if callable(progress_cb):
+        progress_cb(total, total)
+    return {
+        "calls": calls,
+        "rows_written": rows_written,
+        "archived": archived,
+        "tickers_done": done_count,
+        "tickers_total": total,
+        "stopped": stopped,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI: one-time historical news backfill into the ``news_sentiment`` table.
 

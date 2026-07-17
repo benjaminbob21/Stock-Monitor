@@ -152,6 +152,15 @@ CREATE TABLE IF NOT EXISTS news_articles (
     PRIMARY KEY (ticker, published, headline)
 );
 
+CREATE TABLE IF NOT EXISTS news_backfill_state (
+    provider VARCHAR NOT NULL,
+    ticker VARCHAR NOT NULL,
+    covered_through DATE,
+    done BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (provider, ticker)
+);
+
 CREATE TABLE IF NOT EXISTS backtest_results (
     created_at TIMESTAMP DEFAULT now(),
     n_periods INTEGER,
@@ -528,6 +537,35 @@ class Storage:
         """
         row = self._con.execute("SELECT MAX(date) FROM news_sentiment").fetchone()
         return row[0] if row and row[0] is not None else None
+
+    # ------------------------------------------------------------ news backfill state
+    def get_backfill_state(self, provider: str) -> dict[str, tuple[dt.date | None, bool]]:
+        """Return per-ticker backfill progress for ``provider`` as ``{ticker: (through, done)}``.
+
+        Lets the throttled, resumable gap backfill skip finished names and resume the
+        rest from where the last run stopped (so the 25/day quota is never wasted).
+        """
+        rows = self._con.execute(
+            "SELECT ticker, covered_through, done FROM news_backfill_state WHERE provider = ?",
+            [provider],
+        ).fetchall()
+        return {r[0]: (r[1], bool(r[2])) for r in rows}
+
+    def upsert_backfill_state(
+        self, provider: str, ticker: str, covered_through: dt.date | None, done: bool
+    ) -> None:
+        """Record how far a ticker's gap backfill has progressed (idempotent per key)."""
+        self._con.execute(
+            """
+            INSERT INTO news_backfill_state (provider, ticker, covered_through, done, updated_at)
+            VALUES (?, ?, ?, ?, now())
+            ON CONFLICT (provider, ticker) DO UPDATE SET
+                covered_through = excluded.covered_through,
+                done = excluded.done,
+                updated_at = now()
+            """,
+            [provider, ticker.upper(), covered_through, done],
+        )
 
     def upsert_news_articles(self, df: pd.DataFrame) -> int:
         """Upsert raw news headlines (permanent archive). Returns rows written.

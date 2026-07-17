@@ -101,6 +101,24 @@ _news_status: dict[str, object] = {
     "progress": None,
 }
 
+# Tracks the one-time, resumable Alpha Vantage gap backfill (2024-01 -> ~Finnhub's
+# 1-year reach). Runs in-process (single DuckDB owner), capped per run at the free
+# 25/day quota, resuming across nights via the news_backfill_state table.
+_avbf_lock = threading.Lock()
+_avbf_status: dict[str, object] = {
+    "running": False,
+    "last_started": None,
+    "last_finished": None,
+    "last_calls": None,
+    "last_written": None,
+    "last_archived": None,
+    "tickers_done": None,
+    "tickers_total": None,
+    "stopped": None,
+    "last_error": None,
+    "progress": None,
+}
+
 # Cache EOD price bars per (ticker, days) so the candlestick chart never hammers
 # the price provider's free-tier rate limit. Bars only change once per day (after
 # market close), so a modest in-process TTL serves the UI from memory and makes at
@@ -536,6 +554,90 @@ def news_collect_status() -> dict[str, object]:
         status["last_news_date"] = None
         status["days_since"] = None
     return status
+
+
+def _run_av_backfill_bg() -> None:
+    """Run one resumable Alpha Vantage gap-backfill pass in the API process.
+
+    Single DuckDB owner + free 25/day quota → this runs in-process, capped, and
+    resumes across nights via the news_backfill_state table. Never raises.
+    """
+    from datetime import date, timedelta
+
+    from stock_monitor.backfill import backfill_gap_news
+    from stock_monitor.providers.alphavantage_provider import AlphaVantageNewsProvider
+    from stock_monitor.universe import get_scan_universe
+
+    settings = get_settings()
+    log = logging.getLogger("stock_monitor.api")
+
+    def _progress(done: int, total: int) -> None:
+        _avbf_status["progress"] = {"done": done, "total": total}
+
+    try:
+        provider = AlphaVantageNewsProvider(settings.alphavantage_api_key)
+        start = date.fromisoformat(settings.news_gap_start)
+        # Finnhub already covers the trailing ~year; AV fills only the older gap.
+        end = date.today() - timedelta(days=365)
+        tickers = get_scan_universe(settings)
+        with Storage(settings.db_path) as storage:
+            summary = backfill_gap_news(
+                settings,
+                provider,
+                storage,
+                tickers,
+                start,
+                end,
+                max_calls=settings.news_gap_backfill_max_calls,
+                progress_cb=_progress,
+            )
+        _avbf_status.update(
+            {
+                "last_calls": summary["calls"],
+                "last_written": summary["rows_written"],
+                "last_archived": summary["archived"],
+                "tickers_done": summary["tickers_done"],
+                "tickers_total": summary["tickers_total"],
+                "stopped": summary["stopped"],
+                "last_error": None,
+            }
+        )
+        log.info("AV gap backfill pass: %s", summary)
+    except Exception as exc:  # noqa: BLE001 — surface via status, don't crash
+        _avbf_status["last_error"] = str(exc)
+        log.exception("AV gap backfill failed")
+    finally:
+        _avbf_status["running"] = False
+        _avbf_status["last_finished"] = dt.datetime.now().isoformat()
+        _avbf_lock.release()
+
+
+@app.post("/news/backfill-av")
+def trigger_av_backfill(
+    state: StateDep, background: BackgroundTasks
+) -> dict[str, object]:
+    """Kick off one Alpha Vantage gap-backfill pass (in-process, DuckDB-safe).
+
+    Capped at the free 25/day quota and resumable — call again on later nights until
+    ``stopped == "complete"``. 503s if storage or the AV key is missing.
+    """
+    if not state.db_path:
+        raise HTTPException(status_code=503, detail="storage unavailable")
+    if not get_settings().alphavantage_api_key:
+        raise HTTPException(status_code=503, detail="alphavantage key not configured")
+    if not _avbf_lock.acquire(blocking=False):
+        return {"status": "already_running", **_avbf_status}
+    _avbf_status["running"] = True
+    _avbf_status["last_started"] = dt.datetime.now().isoformat()
+    _avbf_status["progress"] = {"done": 0, "total": 0}
+    background.add_task(_run_av_backfill_bg)
+    return {"status": "started", **_avbf_status}
+
+
+@app.get("/news/backfill-av/status")
+def av_backfill_status() -> dict[str, object]:
+    """Poll target for the AV gap backfill: running?, last pass counts, resume state."""
+    return dict(_avbf_status)
 
 
 @app.get("/paper/summary")

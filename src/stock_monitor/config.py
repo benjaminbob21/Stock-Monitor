@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""
     eodhd_api_key: str = ""  # EODHD: deep history + historical news (one-month backfill)
     tiingo_api_key: str = ""  # Tiingo: reliable EOD prices (free tier is generous)
+    alphavantage_api_key: str = ""  # Alpha Vantage NEWS_SENTIMENT: free 25/day gap backfill
 
     # Preferred price source: "yfinance" (default, no key), "tiingo", or "eodhd".
     price_provider: str = "yfinance"
@@ -131,6 +132,12 @@ class Settings(BaseSettings):
     # Historical-news backfill (learn-from-history). Only used by the backfill job.
     news_backfill_years: int = 5  # how far back to pull + score news for the feature
     news_backfill_max_per_day: int = 50  # cap articles/day to keep scoring bounded
+
+    # One-time gap backfill (Alpha Vantage) for 2024-01 -> ~Finnhub's 1-year reach.
+    # AV free tier is 25 requests/day, so each run is capped and resumes via a state
+    # table until every name is covered. Start = day after FNSPID's last date.
+    news_gap_start: str = "2024-01-10"  # ISO date; FNSPID history ends 2024-01-09
+    news_gap_backfill_max_calls: int = 24  # AV calls per run (stay under the 25/day cap)
 
     # Shared secret protecting the API when exposed publicly. Empty = auth disabled
     # (local dev). When set, callers must send it as the `X-API-Key` header.

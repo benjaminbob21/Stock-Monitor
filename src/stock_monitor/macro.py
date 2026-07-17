@@ -16,17 +16,22 @@ from __future__ import annotations
 import datetime as dt
 from bisect import bisect_right
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
-# feature column -> FRED series + transform. macro_cpi_yoy uses pc1 (percent change
-# from a year ago) so it lands as an inflation rate; the rest are levels.
+if TYPE_CHECKING:
+    from stock_monitor.providers.fred_provider import MacroObs
+
+# feature column -> FRED series + transform. ALFRED's initial-release output requires
+# lin units, so macro_cpi_yoy is derived here as year-over-year % change of the CPI
+# index (from first-release values, keeping it point-in-time). The rest are levels.
 MACRO_SERIES: dict[str, dict[str, str]] = {
-    "macro_yield_curve": {"series_id": "T10Y2Y", "units": "lin"},
-    "macro_fed_funds": {"series_id": "DFF", "units": "lin"},
-    "macro_cpi_yoy": {"series_id": "CPIAUCSL", "units": "pc1"},
-    "macro_unemployment": {"series_id": "UNRATE", "units": "lin"},
-    "macro_credit_spread": {"series_id": "BAA10Y", "units": "lin"},
+    "macro_yield_curve": {"series_id": "T10Y2Y", "transform": "level"},
+    "macro_fed_funds": {"series_id": "DFF", "transform": "level"},
+    "macro_cpi_yoy": {"series_id": "CPIAUCSL", "transform": "yoy"},
+    "macro_unemployment": {"series_id": "UNRATE", "transform": "level"},
+    "macro_credit_spread": {"series_id": "BAA10Y", "transform": "level"},
 }
 
 MACRO_FEATURE_COLUMNS: tuple[str, ...] = tuple(MACRO_SERIES)
@@ -92,17 +97,20 @@ def backfill_macro(
     *,
     observation_start: dt.date | None = None,
 ) -> int:
-    """Fetch every :data:`MACRO_SERIES` from FRED and upsert its vintages.
+    """Fetch every :data:`MACRO_SERIES` from FRED and upsert its initial-release values.
 
-    Idempotent: re-running refreshes values and adds any newly released observations
-    (keyed by series + observation date + realtime_start). Returns the row count stored.
+    Idempotent: re-running refreshes values and adds newly released observations (keyed
+    by series + observation date + realtime_start). CPI is stored as year-over-year %
+    change derived from the first-release index. Returns the row count stored.
     """
     rows: list[dict[str, object]] = []
     for spec in MACRO_SERIES.values():
         series_id = spec["series_id"]
         observations = provider.get_series_vintages(  # type: ignore[attr-defined]
-            series_id, units=spec["units"], observation_start=observation_start
+            series_id, observation_start=observation_start
         )
+        if spec["transform"] == "yoy":
+            observations = _to_yoy(observations)
         for obs in observations:
             rows.append(
                 {
@@ -116,3 +124,30 @@ def backfill_macro(
         return 0
     frame = pd.DataFrame(rows)
     return storage.upsert_macro_series(frame)  # type: ignore[attr-defined]
+
+
+def _to_yoy(observations: list[MacroObs]) -> list[MacroObs]:
+    """Convert a first-release index series to year-over-year % change, PIT-safe.
+
+    Each month's YoY uses the first-release index for that month and the same month a
+    year earlier, and inherits the current month's release date — so it becomes knowable
+    exactly when the current month's index is first published.
+    """
+    from stock_monitor.providers.fred_provider import MacroObs
+
+    # First release per observation month (earliest realtime wins).
+    by_month: dict[dt.date, MacroObs] = {}
+    for obs in sorted(observations, key=lambda o: o.realtime_start):
+        by_month.setdefault(obs.obs_date, obs)
+
+    out: list[MacroObs] = []
+    for obs_date, obs in sorted(by_month.items()):
+        prior_date = dt.date(obs_date.year - 1, obs_date.month, 1)
+        prior = by_month.get(prior_date)
+        if prior is None or prior.value == 0:
+            continue
+        yoy = (obs.value / prior.value - 1.0) * 100.0
+        out.append(
+            MacroObs(obs_date=obs_date, realtime_start=obs.realtime_start, value=yoy)
+        )
+    return out

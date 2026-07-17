@@ -15,6 +15,7 @@ import pytest
 from stock_monitor.features.builder import FEATURE_COLUMNS
 from stock_monitor.macro import (
     MACRO_FEATURE_COLUMNS,
+    _to_yoy,
     backfill_macro,
     make_macro_lookup,
 )
@@ -85,6 +86,19 @@ def test_empty_lookup_returns_empty_dict() -> None:
     assert lookup(dt.date(2024, 1, 1)) == {}
 
 
+def test_to_yoy_is_point_in_time() -> None:
+    obs = [
+        MacroObs(dt.date(2023, 1, 1), dt.date(2023, 2, 15), 100.0),
+        MacroObs(dt.date(2024, 1, 1), dt.date(2024, 2, 15), 103.0),
+    ]
+    out = _to_yoy(obs)
+    assert len(out) == 1
+    assert out[0].obs_date == dt.date(2024, 1, 1)
+    # YoY inherits the current month's release date (when it became knowable).
+    assert out[0].realtime_start == dt.date(2024, 2, 15)
+    assert round(out[0].value, 6) == 3.0
+
+
 # --- backfill orchestrator ---------------------------------------------------
 
 
@@ -96,7 +110,7 @@ class _FakeFred:
         self.calls: list[str] = []
 
     def get_series_vintages(
-        self, series_id: str, *, units: str = "lin", observation_start: object = None
+        self, series_id: str, *, observation_start: object = None
     ) -> list[MacroObs]:
         self.calls.append(series_id)
         return self._by_series.get(series_id, [])

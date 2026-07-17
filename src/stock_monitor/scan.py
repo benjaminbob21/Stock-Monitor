@@ -15,6 +15,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.earnings import EarningsProvider, days_until_earnings
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
@@ -34,13 +35,14 @@ def _score_one(
     start: dt.date,
     end: dt.date,
     earnings_provider: EarningsProvider | None = None,
+    sentiment_lookup: Callable[[dt.date], float] | None = None,
 ) -> dict | None:
     prices = price_provider.get_prices(ticker, start, end)
     if prices.empty:
         return None
     facts = fundamental_provider.get_fundamentals(ticker)
     as_of = prices.index[-1].date()
-    row = build_feature_row(ticker, prices, facts, as_of)
+    row = build_feature_row(ticker, prices, facts, as_of, sentiment_lookup=sentiment_lookup)
     if row is None:
         return None
 
@@ -78,11 +80,16 @@ def run_scan(
     today: dt.date | None = None,
     earnings_provider: EarningsProvider | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
+    sentiment_lookups: dict[str, Callable[[dt.date], float]] | None = None,
 ) -> list[dict]:
     """Score and rank the universe; persist the ranking if storage is provided.
 
     ``progress_cb(done, total)`` is invoked after each ticker (best-effort) so a caller
     can surface live progress; a failing callback never interrupts the scan.
+
+    ``sentiment_lookups`` maps ticker -> its PIT news-sentiment lookup; pass it directly
+    (the nightly scan does, since it scores with ``storage=None`` to avoid holding the DB
+    lock). Names without an entry fall back to neutral 0.0.
     """
     end = today or dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
@@ -94,6 +101,9 @@ def run_scan(
             scored = _score_one(
                 ticker, model, price_provider, fundamental_provider, start, end,
                 earnings_provider,
+                sentiment_lookup=(
+                    sentiment_lookups.get(ticker) if sentiment_lookups else None
+                ),
             )
         except Exception:  # noqa: BLE001 — one bad ticker must not sink the scan
             scored = None
@@ -174,6 +184,15 @@ def scan_job(
     threshold = settings.alert_conviction_threshold  # type: ignore[attr-defined]
     tickers = universe if universe is not None else get_scan_universe(settings)
 
+    # Per-ticker PIT news sentiment, read once up front (a brief DB touch) so the slow
+    # scoring loop can run with storage=None and never hold the DuckDB lock.
+    sentiment_lookups: dict[str, Callable[[dt.date], float]] = {}
+    with Storage(settings.db_path) as storage:  # type: ignore[attr-defined]
+        for tk in tickers:
+            daily = storage.read_news_sentiment(tk)
+            if not daily.empty:
+                sentiment_lookups[tk] = make_sentiment_lookup(daily)
+
     started = dt.datetime.now()
     ranked = run_scan(
         tickers,
@@ -184,6 +203,7 @@ def scan_job(
         storage=None,
         earnings_provider=get_earnings_provider(settings),  # type: ignore[arg-type]
         progress_cb=progress_cb,
+        sentiment_lookups=sentiment_lookups,
     )
 
     entrants: list[dict] = []

@@ -11,6 +11,7 @@ import datetime as dt
 
 import pandas as pd
 
+from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
 from stock_monitor.models.scorer import (
@@ -139,7 +140,15 @@ def score_ticker(
 
     facts = fundamental_provider.get_fundamentals(ticker)
     as_of = prices.index[-1].date()
-    row = build_feature_row(ticker, prices, facts, as_of)
+    # Feed the stock's real PIT news sentiment (trailing-window mean of stored
+    # FinBERT scores) so live scoring matches how the model was trained; falls back
+    # to neutral 0.0 when we have no stored news for the ticker.
+    sentiment_lookup = None
+    if storage is not None:
+        daily = storage.read_news_sentiment(ticker)
+        if not daily.empty:
+            sentiment_lookup = make_sentiment_lookup(daily)
+    row = build_feature_row(ticker, prices, facts, as_of, sentiment_lookup=sentiment_lookup)
     if row is None:
         raise InsufficientHistory(ticker)
 

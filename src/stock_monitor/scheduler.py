@@ -498,21 +498,13 @@ def run_backtest_job(settings: Settings) -> None:
     weekly regardless of the Tiingo budget. Result is persisted to the main DB.
     """
     from stock_monitor.backtest import _fetch, run_backtest
-    from stock_monitor.macro import make_macro_lookup
     from stock_monitor.providers.edgar_provider import EdgarProvider
     from stock_monitor.providers.yfinance_provider import YFinanceProvider
     from stock_monitor.universe import get_universe
 
     tickers = [t.upper() for t in get_universe()]
-    # Match production features: bake in the same PIT macro/regime lookup the trainer uses.
-    macro_lookup = None
-    with Storage(settings.db_path) as store:
-        macro = store.read_macro_series()
-        if not macro.empty:
-            macro_lookup = make_macro_lookup(macro)
     frame, price_frames, benchmark = _fetch(
-        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months,
-        macro_lookup=macro_lookup,
+        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months
     )
     result = run_backtest(
         frame,

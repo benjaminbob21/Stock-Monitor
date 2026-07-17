@@ -18,7 +18,6 @@ import pandas as pd
 from stock_monitor.earnings import EarningsProvider, days_until_earnings
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
-from stock_monitor.macro import make_macro_lookup
 from stock_monitor.models.scorer import Scoreable, recommendation_band, score_row
 from stock_monitor.providers.base import FundamentalProvider, PriceProvider
 from stock_monitor.service import apply_risk_caps, risk_flags
@@ -35,14 +34,13 @@ def _score_one(
     start: dt.date,
     end: dt.date,
     earnings_provider: EarningsProvider | None = None,
-    macro_lookup: Callable[[dt.date], dict[str, float]] | None = None,
 ) -> dict | None:
     prices = price_provider.get_prices(ticker, start, end)
     if prices.empty:
         return None
     facts = fundamental_provider.get_fundamentals(ticker)
     as_of = prices.index[-1].date()
-    row = build_feature_row(ticker, prices, facts, as_of, macro_lookup=macro_lookup)
+    row = build_feature_row(ticker, prices, facts, as_of)
     if row is None:
         return None
 
@@ -80,26 +78,14 @@ def run_scan(
     today: dt.date | None = None,
     earnings_provider: EarningsProvider | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
-    macro_lookup: Callable[[dt.date], dict[str, float]] | None = None,
 ) -> list[dict]:
     """Score and rank the universe; persist the ranking if storage is provided.
 
     ``progress_cb(done, total)`` is invoked after each ticker (best-effort) so a caller
     can surface live progress; a failing callback never interrupts the scan.
-
-    ``macro_lookup`` is the PIT macro/regime lookup; pass it directly (the nightly scan
-    does, since it scores with ``storage=None`` to avoid holding the DB lock) or let it
-    be built from ``storage`` when available.
     """
     end = today or dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
-
-    # Macro is ticker-independent, so build the PIT lookup once. Prefer an explicit
-    # lookup; otherwise derive it from storage when a connection is provided.
-    if macro_lookup is None and storage is not None:
-        macro = storage.read_macro_series()
-        if not macro.empty:
-            macro_lookup = make_macro_lookup(macro)
 
     results: list[dict] = []
     total = len(universe)
@@ -108,7 +94,6 @@ def run_scan(
             scored = _score_one(
                 ticker, model, price_provider, fundamental_provider, start, end,
                 earnings_provider,
-                macro_lookup=macro_lookup,
             )
         except Exception:  # noqa: BLE001 — one bad ticker must not sink the scan
             scored = None
@@ -189,14 +174,6 @@ def scan_job(
     threshold = settings.alert_conviction_threshold  # type: ignore[attr-defined]
     tickers = universe if universe is not None else get_scan_universe(settings)
 
-    # Read macro once up front (a brief DB touch) so scoring itself can run with
-    # storage=None and never hold the DuckDB lock during the slow per-ticker loop.
-    macro_lookup = None
-    with Storage(settings.db_path) as storage:  # type: ignore[attr-defined]
-        macro = storage.read_macro_series()
-        if not macro.empty:
-            macro_lookup = make_macro_lookup(macro)
-
     started = dt.datetime.now()
     ranked = run_scan(
         tickers,
@@ -207,7 +184,6 @@ def scan_job(
         storage=None,
         earnings_provider=get_earnings_provider(settings),  # type: ignore[arg-type]
         progress_cb=progress_cb,
-        macro_lookup=macro_lookup,
     )
 
     entrants: list[dict] = []

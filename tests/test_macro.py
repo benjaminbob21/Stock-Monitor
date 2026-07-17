@@ -23,8 +23,11 @@ from stock_monitor.providers.fred_provider import FredError, FredProvider, Macro
 from stock_monitor.storage.db import Storage
 
 
-def test_macro_columns_are_in_feature_columns() -> None:
-    assert set(MACRO_FEATURE_COLUMNS).issubset(FEATURE_COLUMNS)
+def test_macro_columns_are_not_model_features() -> None:
+    # Macro is a data/context layer (regime panel), deliberately NOT baked into the
+    # per-stock model — a market-wide signal can't discriminate between stocks and was
+    # dominating individual scores, so it stays out of FEATURE_COLUMNS.
+    assert not (set(MACRO_FEATURE_COLUMNS) & set(FEATURE_COLUMNS))
     assert "macro_yield_curve" in MACRO_FEATURE_COLUMNS
 
 

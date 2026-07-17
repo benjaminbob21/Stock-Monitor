@@ -26,7 +26,6 @@ import numpy as np
 import pandas as pd
 import pandas_ta as ta
 
-from stock_monitor.macro import MACRO_FEATURE_COLUMNS
 from stock_monitor.providers.base import FundamentalFact
 
 FEATURE_COLUMNS: tuple[str, ...] = (
@@ -41,7 +40,6 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "earnings_yield",
     "fcf_yield",
     "sentiment",
-    *MACRO_FEATURE_COLUMNS,
 )
 
 # Trading-day offsets (~21 sessions per month).
@@ -111,7 +109,6 @@ def build_feature_row(
     facts: Sequence[FundamentalFact],
     as_of: dt.date,
     sentiment_lookup: Callable[[dt.date], float] | None = None,
-    macro_lookup: Callable[[dt.date], dict[str, float]] | None = None,
 ) -> dict[str, object] | None:
     """Build a single PIT-correct feature row, or ``None`` if history is too short.
 
@@ -121,10 +118,6 @@ def build_feature_row(
     ``sentiment_lookup``, when provided, returns the PIT news sentiment knowable on
     ``as_of`` (see :func:`stock_monitor.backfill.make_sentiment_lookup`). It defaults to
     the neutral 0.0 placeholder, preserving behaviour when no backfill exists.
-
-    ``macro_lookup``, when provided, returns the PIT macro/regime values knowable on
-    ``as_of`` (see :func:`stock_monitor.macro.make_macro_lookup`); absent macro values
-    stay NaN so LightGBM treats them as missing rather than fabricated.
     """
     as_of_ts = pd.Timestamp(as_of)
     window = prices.loc[:as_of_ts]
@@ -164,7 +157,7 @@ def build_feature_row(
     known_dates = [k for k in (k1, k2, k3, k4, k5, k6, k7, k8) if k is not None]
     fundamentals_known_on = max(known_dates) if known_dates else None
 
-    row: dict[str, object] = {
+    return {
         "ticker": ticker.upper(),
         "as_of": as_of,
         "fundamentals_known_on": fundamentals_known_on,
@@ -180,12 +173,6 @@ def build_feature_row(
         "fcf_yield": _safe_ratio(free_cash_flow, market_cap),
         "sentiment": float(sentiment_lookup(as_of)) if sentiment_lookup else 0.0,
     }
-    # Macro/regime pillar: same value for every ticker on a given as_of; missing series
-    # stay NaN (a missing regime reading must never fabricate a number).
-    macro = macro_lookup(as_of) if macro_lookup else {}
-    for col in MACRO_FEATURE_COLUMNS:
-        row[col] = float(macro.get(col, math.nan))
-    return row
 
 
 def build_training_frame(
@@ -196,7 +183,6 @@ def build_training_frame(
     label_window_months: int,
     step_months: int = 1,
     sentiment_lookup: Callable[[dt.date], float] | None = None,
-    macro_lookup: Callable[[dt.date], dict[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Build a labelled frame by walking monthly as-of dates through history.
 
@@ -205,8 +191,7 @@ def build_training_frame(
     PIT-correctly: no row can see data past its own ``as_of``.
 
     Pass ``sentiment_lookup`` to bake the backfilled PIT news sentiment into each row's
-    ``sentiment`` feature; omit it to keep the neutral 0.0 placeholder. Pass
-    ``macro_lookup`` to bake in PIT macro/regime features; omit it to leave them NaN.
+    ``sentiment`` feature; omit it to keep the neutral 0.0 placeholder.
     """
     if prices.empty:
         return pd.DataFrame(columns=[*FEATURE_COLUMNS, "label", "as_of", "fundamentals_known_on"])
@@ -216,9 +201,7 @@ def build_training_frame(
 
     for as_of_ts in grid:
         as_of = as_of_ts.date()
-        row = build_feature_row(
-            ticker, prices, facts, as_of, sentiment_lookup, macro_lookup
-        )
+        row = build_feature_row(ticker, prices, facts, as_of, sentiment_lookup)
         if row is None:
             continue
 

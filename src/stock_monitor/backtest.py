@@ -18,7 +18,6 @@ hold an equal-weight basket of the top-k names for one month, repeat.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -161,7 +160,6 @@ def _fetch(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     label_window_months: int,
-    macro_lookup: Callable[[dt.date], dict[str, float]] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame], pd.DataFrame]:
     end = dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
@@ -179,8 +177,7 @@ def _fetch(
         price_frames[ticker] = prices
         facts = fundamental_provider.get_fundamentals(ticker)
         frame = build_training_frame(
-            ticker, prices, facts, benchmark, label_window_months,
-            macro_lookup=macro_lookup,
+            ticker, prices, facts, benchmark, label_window_months
         )
         if not frame.empty:
             frames.append(frame)

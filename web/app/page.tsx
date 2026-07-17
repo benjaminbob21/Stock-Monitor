@@ -21,6 +21,7 @@ import type {
   RecommendationsResponse,
   Scorecard,
   ScanStatus,
+  NewsStatus,
   ScoreResponse,
 } from "@/lib/types";
 
@@ -52,6 +53,10 @@ export default function Home() {
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanPct, setScanPct] = useState<number | null>(null);
+
+  const [newsBusy, setNewsBusy] = useState(false);
+  const [newsNote, setNewsNote] = useState<string | null>(null);
+  const [newsPct, setNewsPct] = useState<number | null>(null);
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recNote, setRecNote] = useState<string | null>(null);
@@ -172,6 +177,59 @@ export default function Home() {
       setScanPct(null);
     }
   }, [loadOpportunities, loadRecommendations, loadPositions]);
+
+  const runNewsCollect = useCallback(async () => {
+    setNewsBusy(true);
+    setNewsPct(0);
+    setNewsNote("Updating news — fetching and scoring the last week of headlines…");
+    try {
+      const res = await fetch("/api/news-collect?days=7", { method: "POST" });
+      const body = (await res.json()) as NewsStatus & ApiError;
+      if (!res.ok) {
+        setNewsNote(body.detail ?? "could not start a news update");
+        setNewsBusy(false);
+        setNewsPct(null);
+        return;
+      }
+      // Poll until the backend reports the collection has finished (cap ~15 min).
+      const started = Date.now();
+      let finished = false;
+      while (Date.now() - started < 15 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const sres = await fetch("/api/news-collect");
+        const status = (await sres.json()) as NewsStatus;
+        const prog = status.progress;
+        if (prog && prog.total > 0) {
+          setNewsPct(Math.round((prog.done / prog.total) * 100));
+          setNewsNote(`Scoring headlines… ${prog.done} of ${prog.total} names`);
+        }
+        if (!status.running) {
+          finished = true;
+          setNewsPct(100);
+          setNewsNote(
+            status.last_error
+              ? `News update failed: ${status.last_error}`
+              : `News updated${
+                  status.last_archived
+                    ? ` — ${status.last_archived} headlines archived`
+                    : " — already up to date"
+                }.`,
+          );
+          break;
+        }
+      }
+      if (!finished) {
+        setNewsNote(
+          "Still updating news in the background — check back in a bit.",
+        );
+      }
+    } catch {
+      setNewsNote("could not reach the news service");
+    } finally {
+      setNewsBusy(false);
+      setNewsPct(null);
+    }
+  }, []);
 
   useEffect(() => {
     loadOpportunities();
@@ -322,18 +380,33 @@ export default function Home() {
           <>
             <div className="opps-header">
               <h2>Ranked opportunities</h2>
-              <button
-                type="button"
-                className="refresh-btn"
-                onClick={runScan}
-                disabled={scanning}
-              >
-                {scanning
-                  ? scanPct !== null
-                    ? `Refreshing ${scanPct}%`
-                    : "Refreshing…"
-                  : "Refresh"}
-              </button>
+              <div className="opps-actions">
+                <button
+                  type="button"
+                  className="refresh-btn"
+                  onClick={runNewsCollect}
+                  disabled={newsBusy}
+                  title="Fetch + score the last week of news and archive it (separate from Refresh)"
+                >
+                  {newsBusy
+                    ? newsPct !== null
+                      ? `Updating news ${newsPct}%`
+                      : "Updating news…"
+                    : "Update news"}
+                </button>
+                <button
+                  type="button"
+                  className="refresh-btn"
+                  onClick={runScan}
+                  disabled={scanning}
+                >
+                  {scanning
+                    ? scanPct !== null
+                      ? `Refreshing ${scanPct}%`
+                      : "Refreshing…"
+                    : "Refresh"}
+                </button>
+              </div>
             </div>
             <p className="opps-meta">
               {scannedAt
@@ -346,6 +419,15 @@ export default function Home() {
               scanNote && (
                 <div className="status" role="status" aria-live="polite">
                   {scanNote}
+                </div>
+              )
+            )}
+            {newsBusy ? (
+              <ScanProgress pct={newsPct} label={newsNote ?? undefined} />
+            ) : (
+              newsNote && (
+                <div className="status" role="status" aria-live="polite">
+                  {newsNote}
                 </div>
               )
             )}

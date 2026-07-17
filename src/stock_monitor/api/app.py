@@ -89,6 +89,18 @@ _scan_status: dict[str, object] = {
     "progress": None,
 }
 
+# Tracks the in-process, on-demand news collect+archive triggered from the UI's
+# "Update news" button (separate from Refresh so the user controls it explicitly).
+_news_lock = threading.Lock()
+_news_status: dict[str, object] = {
+    "running": False,
+    "last_started": None,
+    "last_finished": None,
+    "last_archived": None,
+    "last_error": None,
+    "progress": None,
+}
+
 # Cache EOD price bars per (ticker, days) so the candlestick chart never hammers
 # the price provider's free-tier rate limit. Bars only change once per day (after
 # market close), so a modest in-process TTL serves the UI from memory and makes at
@@ -450,6 +462,59 @@ def trigger_scan(state: StateDep, background: BackgroundTasks) -> dict[str, obje
 def scan_status() -> dict[str, object]:
     """Poll target for the UI: is a scan running, and how did the last one go?"""
     return dict(_scan_status)
+
+
+def _run_news_collect_bg(days: int) -> None:
+    """Run an on-demand news collect+archive in the API process. Never raises."""
+    from stock_monitor.scheduler import collect_daily_news
+
+    settings = get_settings()
+    log = logging.getLogger("stock_monitor.api")
+
+    def _progress(done: int, total: int) -> None:
+        _news_status["progress"] = {"done": done, "total": total}
+
+    try:
+        archived = collect_daily_news(
+            settings, lookback_days=days, progress_cb=_progress
+        )
+        _news_status["last_archived"] = archived
+        _news_status["last_error"] = None
+        log.info("on-demand news collection archived %d rows", archived)
+    except Exception as exc:  # noqa: BLE001 — surface via status, don't crash
+        _news_status["last_error"] = str(exc)
+        log.exception("on-demand news collection failed")
+    finally:
+        _news_status["running"] = False
+        _news_status["last_finished"] = dt.datetime.now().isoformat()
+        _news_lock.release()
+
+
+@app.post("/news/collect")
+def trigger_news_collect(
+    state: StateDep, background: BackgroundTasks, days: int = 7
+) -> dict[str, object]:
+    """Kick off an on-demand news collect+archive (the UI "Update news" button).
+
+    Runs in-process so DuckDB stays single-owner. Idempotent — re-runs skip days
+    already stored. Independent of the model (needs only storage + a news provider).
+    """
+    if not state.db_path:
+        raise HTTPException(status_code=503, detail="storage unavailable")
+    days = max(1, min(int(days), 30))
+    if not _news_lock.acquire(blocking=False):
+        return {"status": "already_running", **_news_status}
+    _news_status["running"] = True
+    _news_status["last_started"] = dt.datetime.now().isoformat()
+    _news_status["progress"] = {"done": 0, "total": 0}
+    background.add_task(_run_news_collect_bg, days)
+    return {"status": "started", **_news_status}
+
+
+@app.get("/news/collect/status")
+def news_collect_status() -> dict[str, object]:
+    """Poll target for the UI: is a news collection running, and how did it go?"""
+    return dict(_news_status)
 
 
 @app.get("/paper/summary")

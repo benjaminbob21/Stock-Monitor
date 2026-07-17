@@ -265,7 +265,12 @@ def run_paper_tracking(settings: Settings, price_provider=None) -> tuple[int, in
     return recorded, closed
 
 
-def collect_daily_news(settings: Settings) -> int:
+def collect_daily_news(
+    settings: Settings,
+    *,
+    lookback_days: int | None = None,
+    progress_cb: object | None = None,
+) -> int:
     """Pull, score, and permanently archive today's news for tracked names.
 
     Runs daily so we never lose a day of headlines. Free news providers only reach back
@@ -273,12 +278,16 @@ def collect_daily_news(settings: Settings) -> int:
     that we own forever — no re-subscription needed. Writes both the daily sentiment
     aggregate (the model feature) and the raw headlines (a re-scorable archive). Returns
     the number of headline rows archived.
+
+    ``lookback_days`` overrides the configured window (used by the on-demand "Update
+    news" button). ``progress_cb(done, total)`` is called after each ticker so the UI
+    can render a progress bar; both are idempotent — re-runs skip days already stored.
     """
     from stock_monitor.backfill import aggregate_daily_sentiment, articles_frame
 
     news_provider = get_news_provider(settings)
     analyzer = get_sentiment_analyzer(settings)
-    lookback = settings.news_lookback_days
+    lookback = lookback_days or settings.news_lookback_days
 
     archived = 0
     with Storage(settings.db_path) as storage:
@@ -290,13 +299,20 @@ def collect_daily_news(settings: Settings) -> int:
             for o in storage.read_latest_opportunities(limit=settings.digest_top_n)
         }
         tickers = sorted({*DEFAULT_WATCHLIST, *holdings, *opportunities})
-        for ticker in tickers:
+        total = len(tickers)
+        if callable(progress_cb):
+            progress_cb(0, total)
+        for done, ticker in enumerate(tickers, start=1):
             try:
                 items = news_provider.get_news(ticker, lookback)
             except Exception:  # noqa: BLE001 — one bad symbol must not abort collection
                 logger.exception("daily news fetch failed for %s", ticker)
+                if callable(progress_cb):
+                    progress_cb(done, total)
                 continue
             if not items:
+                if callable(progress_cb):
+                    progress_cb(done, total)
                 continue
             daily = aggregate_daily_sentiment(
                 ticker, items, analyzer, max_per_day=settings.news_backfill_max_per_day
@@ -306,6 +322,8 @@ def collect_daily_news(settings: Settings) -> int:
             archive = articles_frame(ticker, items, analyzer)
             if not archive.empty:
                 archived += storage.upsert_news_articles(archive)
+            if callable(progress_cb):
+                progress_cb(done, total)
     logger.info("daily news collection archived %d headline rows", archived)
     return archived
 

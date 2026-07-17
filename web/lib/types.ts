@@ -61,6 +61,16 @@ export interface ScanStatus {
   progress?: { done: number; total: number } | null;
 }
 
+export interface NewsStatus {
+  status?: "started" | "already_running";
+  running: boolean;
+  last_started: string | null;
+  last_finished: string | null;
+  last_archived: number | null;
+  last_error: string | null;
+  progress?: { done: number; total: number } | null;
+}
+
 export interface Opportunity {
   rank: number;
   ticker: string;

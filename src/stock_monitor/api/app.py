@@ -51,6 +51,7 @@ from stock_monitor.service import (
     strong_recommendations,
 )
 from stock_monitor.storage.db import Storage
+from stock_monitor.symbols import SymbolDirectory
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -72,6 +73,7 @@ class AppState:
     news_lookback_days: int = 7
     sentiment_negative_threshold: float = -0.25
     earnings_provider: EarningsProvider | None = None
+    symbol_directory: object | None = None
 
 
 _state: AppState | None = None
@@ -167,6 +169,7 @@ def build_state() -> AppState:
         news_lookback_days=settings.news_lookback_days,
         sentiment_negative_threshold=settings.sentiment_negative_threshold,
         earnings_provider=get_earnings_provider(settings),
+        symbol_directory=SymbolDirectory(),
     )
 
 
@@ -272,6 +275,9 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                 earnings_provider=state.earnings_provider,
             )
         SCORES_SERVED.labels(outcome="ok").inc()
+        # Attach the full company name (for the scoring card header); best-effort.
+        if state.symbol_directory is not None:
+            result["name"] = state.symbol_directory.name_for(ticker)  # type: ignore[attr-defined]
         return result
     except TickerDataUnavailable as exc:
         SCORES_SERVED.labels(outcome="no_data").inc()
@@ -286,6 +292,22 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
         raise HTTPException(status_code=422, detail=f"data quarantined: {exc}") from exc
     finally:
         SCORE_LATENCY.observe(time.perf_counter() - start)
+
+
+@app.get("/search")
+def search_symbols(state: StateDep, q: str = "", limit: int = 15) -> dict[str, object]:
+    """Search the SEC ticker registry by company name or symbol (for the search box).
+
+    Lets the user find a stock by name ("apple") when they don't know the ticker.
+    Returns lightweight ``{ticker, name}`` matches, best first.
+    """
+    if state.symbol_directory is None or not q.strip():
+        return {"query": q, "results": []}
+    matches = state.symbol_directory.search(q, limit=max(1, min(limit, 50)))  # type: ignore[attr-defined]
+    return {
+        "query": q,
+        "results": [{"ticker": m.ticker, "name": m.name} for m in matches],
+    }
 
 
 @app.get("/opportunities")

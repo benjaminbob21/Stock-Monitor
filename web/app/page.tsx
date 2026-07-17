@@ -23,6 +23,8 @@ import type {
   ScanStatus,
   NewsStatus,
   ScoreResponse,
+  SearchResponse,
+  SymbolMatch,
 } from "@/lib/types";
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -45,6 +47,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailTicker, setDetailTicker] = useState("");
+
+  const [searchResults, setSearchResults] = useState<SymbolMatch[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
@@ -194,7 +199,9 @@ export default function Home() {
   const runNewsCollect = useCallback(async () => {
     setNewsBusy(true);
     setNewsPct(0);
-    setNewsNote("Updating news — fetching and scoring the last week of headlines…");
+    setNewsNote(
+      "Updating news — fetching and scoring the last week of headlines…",
+    );
     try {
       const res = await fetch("/api/news-collect?days=7", { method: "POST" });
       const body = (await res.json()) as NewsStatus & ApiError;
@@ -321,6 +328,37 @@ export default function Home() {
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
   }, []);
+
+  // Search-as-you-type by company name or ticker (debounced). Lets the user find a
+  // stock without knowing its symbol; tapping a result opens the full scoring card.
+  useEffect(() => {
+    if (tab !== "search") return;
+    const q = ticker.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearchBusy(false);
+      return;
+    }
+    let active = true;
+    setSearchBusy(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (res.ok && active) {
+          const body = (await res.json()) as SearchResponse;
+          setSearchResults(body.results ?? []);
+        }
+      } catch {
+        /* search is best-effort */
+      } finally {
+        if (active) setSearchBusy(false);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [ticker, tab]);
 
   // Make the phone's back gesture / button close the analysis sheet instead of
   // leaving the app, and lock the underlying list so it keeps its scroll spot.
@@ -575,23 +613,49 @@ export default function Home() {
               className="searchbar"
               onSubmit={(e) => {
                 e.preventDefault();
-                lookup(ticker);
+                if (searchResults.length > 0) lookup(searchResults[0].ticker);
+                else if (ticker.trim()) lookup(ticker);
               }}
             >
               <input
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value)}
-                placeholder="Look up any ticker (e.g. AAPL)"
-                aria-label="Ticker symbol"
+                placeholder="Search by company or ticker (e.g. Apple or AAPL)"
+                aria-label="Company name or ticker"
+                autoCapitalize="none"
+                autoCorrect="off"
               />
               <button type="submit" disabled={loading || !ticker.trim()}>
                 {loading ? "Scoring…" : "Score"}
               </button>
             </form>
             <p className="hint">
-              Score any symbol on demand — you&apos;ll get the full conviction
-              breakdown and live news sentiment.
+              Search by company name or ticker — tap a result for the full
+              conviction breakdown and live news sentiment.
             </p>
+            {searchBusy && <div className="status">Searching…</div>}
+            {searchResults.length > 0 && (
+              <div className="searchresults">
+                {searchResults.map((m) => (
+                  <button
+                    key={m.ticker}
+                    type="button"
+                    className="searchrow"
+                    onClick={() => lookup(m.ticker)}
+                  >
+                    <span className="searchrow-name">{m.name}</span>
+                    <span className="searchrow-ticker">{m.ticker}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!searchBusy &&
+              ticker.trim().length >= 2 &&
+              searchResults.length === 0 && (
+                <div className="status">
+                  No matches — try a different name or the exact ticker.
+                </div>
+              )}
           </>
         )}
       </main>

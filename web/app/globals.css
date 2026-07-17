@@ -400,6 +400,62 @@ body.sheet-open {
   margin: 0 0 24px;
 }
 
+.searchresults {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.searchrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease;
+}
+
+.searchrow:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+}
+
+.searchrow:active {
+  transform: scale(0.99);
+  background: var(--panel-2);
+}
+
+.searchrow-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchrow-ticker {
+  flex: 0 0 auto;
+  font-family: var(--font-jbmono), ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
 .status {
   padding: 14px 16px;
   border-radius: var(--radius-sm);
@@ -508,6 +564,14 @@ body.sheet-open {
   letter-spacing: -0.01em;
   color: var(--text-strong);
   margin: 0;
+}
+
+.company {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 2px 0 0;
 }
 
 .asof {

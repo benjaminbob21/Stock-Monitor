@@ -23,6 +23,7 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
       <div className="card-top">
         <div>
           <p className="ticker">{data.ticker}</p>
+          {data.name && <p className="company">{data.name}</p>}
           <p className="asof">as of {data.as_of}</p>
           <span
             className="rec"

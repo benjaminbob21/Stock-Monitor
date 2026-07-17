@@ -7,6 +7,7 @@ export interface Driver {
 
 export interface ScoreResponse {
   ticker: string;
+  name?: string | null;
   as_of: string;
   conviction: number;
   recommendation: string;
@@ -49,6 +50,16 @@ export interface ExplainResponse {
 
 export interface ApiError {
   detail: string;
+}
+
+export interface SymbolMatch {
+  ticker: string;
+  name: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SymbolMatch[];
 }
 
 export interface ScanStatus {

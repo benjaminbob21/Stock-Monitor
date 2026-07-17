@@ -69,6 +69,8 @@ export interface NewsStatus {
   last_archived: number | null;
   last_error: string | null;
   progress?: { done: number; total: number } | null;
+  last_news_date?: string | null;
+  days_since?: number | null;
 }
 
 export interface Opportunity {

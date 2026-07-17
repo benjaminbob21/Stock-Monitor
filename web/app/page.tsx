@@ -57,6 +57,8 @@ export default function Home() {
   const [newsBusy, setNewsBusy] = useState(false);
   const [newsNote, setNewsNote] = useState<string | null>(null);
   const [newsPct, setNewsPct] = useState<number | null>(null);
+  const [newsDaysSince, setNewsDaysSince] = useState<number | null>(null);
+  const [newsDate, setNewsDate] = useState<string | null>(null);
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recNote, setRecNote] = useState<string | null>(null);
@@ -113,6 +115,17 @@ export default function Home() {
       if (body && body.verdict) setScorecard(body);
     } catch {
       // scorecard is non-critical; leave it hidden if the backend is unreachable
+    }
+  }, []);
+
+  const loadNewsStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/news-collect");
+      const status = (await res.json()) as NewsStatus;
+      setNewsDaysSince(status.days_since ?? null);
+      setNewsDate(status.last_news_date ?? null);
+    } catch {
+      // freshness is non-critical; leave it hidden if the backend is unreachable
     }
   }, []);
 
@@ -228,16 +241,23 @@ export default function Home() {
     } finally {
       setNewsBusy(false);
       setNewsPct(null);
+      loadNewsStatus();
     }
-  }, []);
+  }, [loadNewsStatus]);
 
   useEffect(() => {
     loadOpportunities();
     loadRecommendations();
     loadPositions();
     loadScorecard();
-  }, [loadOpportunities, loadRecommendations, loadPositions, loadScorecard]);
-
+    loadNewsStatus();
+  }, [
+    loadOpportunities,
+    loadRecommendations,
+    loadPositions,
+    loadScorecard,
+    loadNewsStatus,
+  ]);
   // Open the full-screen analysis sheet for a ticker (from any list or search).
   const lookup = useCallback(async (symbol: string) => {
     const clean = symbol.trim().toUpperCase();
@@ -413,6 +433,18 @@ export default function Home() {
                 ? `scanned ${new Date(scannedAt).toLocaleString()}`
                 : "not scanned yet"}
             </p>
+            {newsDaysSince !== null && (
+              <p className="opps-meta">
+                news{" "}
+                {newsDaysSince <= 0
+                  ? "updated today"
+                  : newsDaysSince === 1
+                    ? "updated yesterday"
+                    : `last updated ${newsDaysSince} days ago`}
+                {newsDate ? ` (${newsDate})` : ""}
+                {newsDaysSince >= 5 ? " — tap “Update news”" : ""}
+              </p>
+            )}
             {scanning ? (
               <ScanProgress pct={scanPct} label={scanNote ?? undefined} />
             ) : (

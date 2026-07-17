@@ -520,6 +520,15 @@ class Storage:
             "SELECT * FROM news_sentiment ORDER BY ticker, date"
         ).df()
 
+    def latest_news_date(self) -> dt.date | None:
+        """Return the most recent day we have stored news sentiment for.
+
+        Freshness signal for the UI: how many days behind is our news? Returns ``None``
+        when no news has ever been stored.
+        """
+        row = self._con.execute("SELECT MAX(date) FROM news_sentiment").fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def upsert_news_articles(self, df: pd.DataFrame) -> int:
         """Upsert raw news headlines (permanent archive). Returns rows written.
 

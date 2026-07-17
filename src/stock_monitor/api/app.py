@@ -501,7 +501,9 @@ def trigger_news_collect(
     """
     if not state.db_path:
         raise HTTPException(status_code=503, detail="storage unavailable")
-    days = max(1, min(int(days), 30))
+    # Button sends days=7; larger values (up to ~1yr, the free news window) let this
+    # same endpoint drive an on-demand historical backfill without a second DB owner.
+    days = max(1, min(int(days), 365))
     if not _news_lock.acquire(blocking=False):
         return {"status": "already_running", **_news_status}
     _news_status["running"] = True
@@ -513,8 +515,27 @@ def trigger_news_collect(
 
 @app.get("/news/collect/status")
 def news_collect_status() -> dict[str, object]:
-    """Poll target for the UI: is a news collection running, and how did it go?"""
-    return dict(_news_status)
+    """Poll target for the UI: is a news collection running, how did it go, and how
+    fresh is our news?
+
+    ``days_since`` (days since the most recent stored news day) lets the UI show, on
+    entry, how long it's been since news last updated — so the user knows when to hit
+    "Update news". The nightly job keeps this at 0-1 when the VM is awake.
+    """
+    status = dict(_news_status)
+    latest: dt.date | None = None
+    try:
+        with Storage(get_settings().db_path) as storage:
+            latest = storage.latest_news_date()
+    except Exception:  # noqa: BLE001 — freshness is best-effort, never break the poll
+        latest = None
+    if latest is not None:
+        status["last_news_date"] = latest.isoformat()
+        status["days_since"] = (dt.date.today() - latest).days
+    else:
+        status["last_news_date"] = None
+        status["days_since"] = None
+    return status
 
 
 @app.get("/paper/summary")

@@ -24,6 +24,7 @@ from stock_monitor.pipeline import DEFAULT_WATCHLIST
 from stock_monitor.scan import scan_job
 from stock_monitor.sentiment import analyze_ticker, get_news_provider, get_sentiment_analyzer
 from stock_monitor.storage.db import Storage
+from stock_monitor.universe import get_scan_universe
 
 logger = logging.getLogger("stock_monitor.scheduler")
 
@@ -298,7 +299,12 @@ def collect_daily_news(
             o["ticker"]
             for o in storage.read_latest_opportunities(limit=settings.digest_top_n)
         }
-        tickers = sorted({*DEFAULT_WATCHLIST, *holdings, *opportunities})
+        # Cover the whole scan universe (not just the 6-name watchlist) so news stays
+        # aligned with every name the model actually scores, plus anything we hold or
+        # currently rank. Finnhub free has no daily cap, so the extra calls are free.
+        tickers = sorted(
+            {*get_scan_universe(settings), *DEFAULT_WATCHLIST, *holdings, *opportunities}
+        )
         total = len(tickers)
         if callable(progress_cb):
             progress_cb(0, total)

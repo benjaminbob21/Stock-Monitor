@@ -334,6 +334,40 @@ def collect_daily_news(
     return archived
 
 
+def run_av_gap_backfill(settings: Settings) -> dict[str, object] | None:
+    """Nightly auto-continuation of the Alpha Vantage historical-news gap backfill.
+
+    One capped, resumable pass per night (respecting AV's free 25/day quota) until every
+    name in the scan universe is covered back to ``news_gap_start``. Idempotent: once a
+    ticker is done it's skipped, so this safely no-ops after the whole gap is filled.
+    Runs in-process so DuckDB stays single-owner. Returns the pass summary (or ``None``
+    when no AV key is configured).
+    """
+    if not settings.alphavantage_api_key:
+        return None
+
+    from stock_monitor.backfill import backfill_gap_news
+    from stock_monitor.providers.alphavantage_provider import AlphaVantageNewsProvider
+
+    provider = AlphaVantageNewsProvider(settings.alphavantage_api_key)
+    start = dt.date.fromisoformat(settings.news_gap_start)
+    # Finnhub already covers the trailing ~year; AV fills only the older gap.
+    end = dt.date.today() - dt.timedelta(days=365)
+    tickers = get_scan_universe(settings)
+    with Storage(settings.db_path) as storage:
+        summary = backfill_gap_news(
+            settings,
+            provider,
+            storage,
+            tickers,
+            start,
+            end,
+            max_calls=settings.news_gap_backfill_max_calls,
+        )
+    logger.info("AV gap backfill pass: %s", summary)
+    return summary
+
+
 def send_daily_digest(settings: Settings, notifier: Notifier) -> None:
     """Send a top-N digest (with paper track record) to the daily channel (Telegram)."""
     from stock_monitor.paper import compose_digest, paper_summary
@@ -554,6 +588,17 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
         id="daily_news",
         replace_existing=True,
     )
+
+    if settings.alphavantage_api_key:
+        # Auto-continue the one-time AV historical-news gap backfill each night (capped,
+        # resumable, idempotent) until the whole universe is covered — then it no-ops.
+        scheduler.add_job(
+            lambda: _safe(run_av_gap_backfill, settings),
+            "cron",
+            hour=settings.news_gap_backfill_hour,
+            id="av_gap_backfill",
+            replace_existing=True,
+        )
 
     def _daily_digest() -> None:
         # Snapshot today's picks as paper buys, close matured ones, then send the digest.

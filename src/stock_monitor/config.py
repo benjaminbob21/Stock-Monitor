@@ -138,6 +138,7 @@ class Settings(BaseSettings):
     # table until every name is covered. Start = day after FNSPID's last date.
     news_gap_start: str = "2024-01-10"  # ISO date; FNSPID history ends 2024-01-09
     news_gap_backfill_max_calls: int = 24  # AV calls per run (stay under the 25/day cap)
+    news_gap_backfill_hour: int = 2  # nightly hour to auto-continue the gap backfill
 
     # Shared secret protecting the API when exposed publicly. Empty = auth disabled
     # (local dev). When set, callers must send it as the `X-API-Key` header.

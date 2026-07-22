@@ -122,7 +122,9 @@ def test_holdings_signals_fire_and_debounce(tmp_path: Path, monkeypatch) -> None
     settings = Settings(db_path=str(tmp_path / "h.duckdb"))
     # Patch the scoring seams so no model/network is needed.
     monkeypatch.setattr(
-        sched, "_load_scoring_context", lambda s: ("m", "v1", "pp", "fp", "np", "an")
+        sched,
+        "_load_scoring_context",
+        lambda s: ("m", "v1", "pp", "fp", "np", "an", "sm", "ep"),
     )
     monkeypatch.setattr(sched, "_daily_return", lambda pp, t: 0.09)  # sharp +9%
 
@@ -150,7 +152,9 @@ def test_holdings_signals_hold_is_quiet(tmp_path: Path, monkeypatch) -> None:
 
     settings = Settings(db_path=str(tmp_path / "q.duckdb"))
     monkeypatch.setattr(
-        sched, "_load_scoring_context", lambda s: ("m", "v1", "pp", "fp", "np", "an")
+        sched,
+        "_load_scoring_context",
+        lambda s: ("m", "v1", "pp", "fp", "np", "an", "sm", "ep"),
     )
     monkeypatch.setattr(sched, "_daily_return", lambda pp, t: 0.01)  # calm day
 

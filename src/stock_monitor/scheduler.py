@@ -106,7 +106,8 @@ def _load_scoring_context(settings: Settings):
     """Load the model + providers needed to re-score tracked positions in a job.
 
     Returns ``(model, version, price_provider, fundamental_provider, news_provider,
-    analyzer)`` or ``None`` if no trained model is available yet.
+    analyzer, short_model, earnings_provider)`` or ``None`` if no trained model is
+    available yet.
     """
     from stock_monitor.models.registry import compute_model_version, load_model
     from stock_monitor.providers import get_price_provider
@@ -123,6 +124,8 @@ def _load_scoring_context(settings: Settings):
         EdgarProvider(),
         get_news_provider(settings),
         get_sentiment_analyzer(settings),
+        load_model(settings.model_path_short),
+        get_earnings_provider(settings),
     )
 
 
@@ -163,7 +166,16 @@ def check_holdings_signals(settings: Settings, notifier: Notifier) -> int:
     ctx = _load_scoring_context(settings)
     if ctx is None:
         return 0
-    model, version, price_provider, fundamental_provider, news_provider, analyzer = ctx
+    (
+        model,
+        version,
+        price_provider,
+        fundamental_provider,
+        news_provider,
+        analyzer,
+        short_model,
+        earnings_provider,
+    ) = ctx
     sent = 0
 
     with Storage(settings.db_path) as storage:
@@ -177,6 +189,8 @@ def check_holdings_signals(settings: Settings, notifier: Notifier) -> int:
             analyzer=analyzer,
             negative_threshold=settings.sentiment_negative_threshold,
             news_lookback_days=settings.news_lookback_days,
+            short_model=short_model,
+            earnings_provider=earnings_provider,
         )
         for view in views:
             if view.get("status") != "open":
@@ -415,7 +429,16 @@ def _holdings_digest_block(settings: Settings) -> str:
     ctx = _load_scoring_context(settings)
     if ctx is None:
         return ""
-    model, version, price_provider, fundamental_provider, news_provider, analyzer = ctx
+    (
+        model,
+        version,
+        price_provider,
+        fundamental_provider,
+        news_provider,
+        analyzer,
+        short_model,
+        earnings_provider,
+    ) = ctx
     with Storage(settings.db_path) as storage:
         views = list_position_views(
             model,
@@ -427,6 +450,8 @@ def _holdings_digest_block(settings: Settings) -> str:
             analyzer=analyzer,
             negative_threshold=settings.sentiment_negative_threshold,
             news_lookback_days=settings.news_lookback_days,
+            short_model=short_model,
+            earnings_provider=earnings_provider,
         )
     open_views = [v for v in views if v.get("status") == "open"]
     if not open_views:

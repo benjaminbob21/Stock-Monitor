@@ -84,6 +84,9 @@ def _score_now(
     model_version: str,
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
+    storage: Storage | None = None,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> dict:
     return score_ticker(
         ticker,
@@ -92,7 +95,9 @@ def _score_now(
         price_provider=price_provider,
         fundamental_provider=fundamental_provider,
         label_window_months=12,
-        storage=None,
+        storage=storage,
+        short_model=short_model,
+        earnings_provider=earnings_provider,
     )
 
 
@@ -104,10 +109,19 @@ def open_position(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     storage: Storage,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> dict:
     """Snapshot today's price + score for ``ticker`` and start tracking it."""
     scored = _score_now(
-        ticker, model, model_version, price_provider, fundamental_provider
+        ticker,
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model,
+        earnings_provider,
     )
     position_id = uuid.uuid4().hex[:12]
     storage.add_position(
@@ -122,7 +136,14 @@ def open_position(
     stored = storage.get_position(position_id)
     assert stored is not None
     return position_view(
-        stored, model, model_version, price_provider, fundamental_provider
+        stored,
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model=short_model,
+        earnings_provider=earnings_provider,
     )
 
 
@@ -132,10 +153,13 @@ def position_view(
     model_version: str,
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
+    storage: Storage | None = None,
     news_provider: NewsProvider | None = None,
     analyzer: SentimentAnalyzer | None = None,
     negative_threshold: float = -0.25,
     news_lookback_days: int = 7,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> dict:
     """Re-score a tracked position and attach live status + both exit reads.
 
@@ -143,7 +167,14 @@ def position_view(
     ``negative_news`` flag that tips the exit signal toward sell (build-plan §5).
     """
     scored = _score_now(
-        position["ticker"], model, model_version, price_provider, fundamental_provider
+        position["ticker"],
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model,
+        earnings_provider,
     )
     current_price = float(scored["price"])
     current_conviction = int(scored["conviction"])
@@ -209,6 +240,8 @@ def list_position_views(
     analyzer: SentimentAnalyzer | None = None,
     negative_threshold: float = -0.25,
     news_lookback_days: int = 7,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> list[dict]:
     """Return every tracked position with a fresh live status."""
     views: list[dict] = []
@@ -221,10 +254,13 @@ def list_position_views(
                     model_version,
                     price_provider,
                     fundamental_provider,
+                    storage,
                     news_provider=news_provider,
                     analyzer=analyzer,
                     negative_threshold=negative_threshold,
                     news_lookback_days=news_lookback_days,
+                    short_model=short_model,
+                    earnings_provider=earnings_provider,
                 )
             )
         except Exception:  # noqa: BLE001 — a data hiccup shouldn't hide the whole list
@@ -240,17 +276,33 @@ def sell_position(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     storage: Storage,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
 ) -> dict | None:
     """Mark a position sold at today's price and return its updated view."""
     position = storage.get_position(position_id)
     if position is None:
         return None
     scored = _score_now(
-        position["ticker"], model, model_version, price_provider, fundamental_provider
+        position["ticker"],
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model,
+        earnings_provider,
     )
     storage.close_position(position_id, dt.datetime.now(), float(scored["price"]))
     updated = storage.get_position(position_id)
     assert updated is not None
     return position_view(
-        updated, model, model_version, price_provider, fundamental_provider
+        updated,
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model=short_model,
+        earnings_provider=earnings_provider,
     )

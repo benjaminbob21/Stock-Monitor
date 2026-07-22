@@ -364,6 +364,8 @@ def positions(state: StateDep) -> dict[str, object]:
             analyzer=state.analyzer,
             negative_threshold=state.sentiment_negative_threshold,
             news_lookback_days=state.news_lookback_days,
+            short_model=state.model_short,
+            earnings_provider=state.earnings_provider,
         )
     return {"positions": views}
 
@@ -917,6 +919,8 @@ def add_position(ticker: str, state: StateDep) -> dict[str, object]:
                 price_provider=state.price_provider,  # type: ignore[arg-type]
                 fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
                 storage=store,
+                short_model=state.model_short,
+                earnings_provider=state.earnings_provider,
             )
     except TickerDataUnavailable as exc:
         raise HTTPException(status_code=404, detail=f"no price data for {ticker.upper()}") from exc
@@ -936,6 +940,8 @@ def sell(position_id: str, state: StateDep) -> dict[str, object]:
             price_provider=state.price_provider,  # type: ignore[arg-type]
             fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
             storage=store,
+            short_model=state.model_short,
+            earnings_provider=state.earnings_provider,
         )
     if view is None:
         raise HTTPException(status_code=404, detail="position not found")

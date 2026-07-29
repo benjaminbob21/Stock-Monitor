@@ -161,7 +161,7 @@ def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
     """
     base, calibrator = _unwrap(model)
     x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
-    raw = float(base.predict_proba(x)[0, 1])
+    raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
     return int(round(proba * 100))
 
@@ -215,7 +215,7 @@ def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
     base, calibrator = _unwrap(model)
     x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
 
-    raw = float(base.predict_proba(x)[0, 1])
+    raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
     conviction = int(round(proba * 100))
 

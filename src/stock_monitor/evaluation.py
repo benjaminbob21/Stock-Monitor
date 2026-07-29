@@ -105,8 +105,8 @@ def evaluate_walk_forward(
         x_test = frame.loc[test_idx, list(FEATURE_COLUMNS)]
         y_test = frame.loc[test_idx, "label"].astype(int)
 
-        raw_train = model.predict_proba(x_train)[:, 1]
-        raw_test = model.predict_proba(x_test)[:, 1]
+        raw_train = np.asarray(model.predict_proba(x_train))[:, 1]
+        raw_test = np.asarray(model.predict_proba(x_test))[:, 1]
         calibrator = fit_calibrator(raw_train, y_train, method=calibration_method)
         cal_test = calibrator.transform(raw_test)
 

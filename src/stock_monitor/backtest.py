@@ -88,7 +88,7 @@ def run_backtest(
             continue
 
         model = train_model(train)
-        scores = model.predict_proba(today[list(FEATURE_COLUMNS)])[:, 1]
+        scores = np.asarray(model.predict_proba(today[list(FEATURE_COLUMNS)]))[:, 1]
         ranked = today.assign(_score=scores).sort_values("_score", ascending=False)
         selected = ranked.head(top_k)["ticker"].tolist()
         if not selected:

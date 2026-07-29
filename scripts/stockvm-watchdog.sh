@@ -49,14 +49,25 @@ if [ "$loc" != "200" ]; then
   "$MULTIPASS" exec "$VM" -- sudo systemctl restart stock-monitor >/dev/null 2>&1
 else
   # Backend is fine, only the public funnel dropped -> re-apply it cheaply
-  # (no FinBERT reload). --bg persists the serve config in tailscaled.
+  # (no FinBERT reload). `serve reset` clears any stale serve/funnel config and
+  # `--bg` persists the fresh config in tailscaled. We intentionally do NOT call
+  # `tailscale funnel <port> off` here: that syntax was removed in newer
+  # Tailscale ("the CLI for serve and funnel has changed") and `serve reset`
+  # already does the teardown.
+  #
+  # Both commands run in a SINGLE `multipass exec … sudo bash -c` on purpose:
+  # issuing them as two separate `multipass exec` calls hangs, because the
+  # backgrounded `funnel --bg` process inherits the exec's stdout pipe and keeps
+  # it open forever. Redirecting its std streams to /dev/null lets it detach.
   log "backend up but funnel down -> re-applying funnel"
-  "$MULTIPASS" exec "$VM" -- sudo tailscale funnel "$PORT" off >/dev/null 2>&1
-  "$MULTIPASS" exec "$VM" -- sudo tailscale serve reset   >/dev/null 2>&1
-  "$MULTIPASS" exec "$VM" -- sudo tailscale funnel --bg "$PORT" >/dev/null 2>&1
+  "$MULTIPASS" exec "$VM" -- sudo bash -c \
+    "tailscale serve reset >/dev/null 2>&1; tailscale funnel --bg $PORT </dev/null >/dev/null 2>&1" \
+    >/dev/null 2>&1
 fi
 
-# 4) Re-check and report.
-sleep 4
+# 4) Re-check and report. Re-applying a funnel takes ~10-15s to propagate to the
+# public Tailscale relay, so wait long enough that this reading is truthful
+# rather than a premature "still down".
+sleep 15
 pub="$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/health" 2>/dev/null)"
 log "public health after heal=$pub"

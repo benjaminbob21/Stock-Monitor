@@ -287,7 +287,9 @@ hand off from one laptop to the other.
 
 ---
 
-## 12. FinBERT via a Multipass Ubuntu VM (same environment on both Macs)
+## 12. Historical Multipass setup (retired)
+
+> **Retired 2026-08-05:** The `stockvm` Multipass VM was archived and permanently deleted after Oracle production parity was verified. Do not follow this section for normal operation; Oracle Cloud is now the sole production host.
 
 FinBERT needs **PyTorch**, and PyTorch **has no macOS-Intel (x86-64) wheels** (dropped after
 torch 2.2.x). So on the Intel Mac, `SENTIMENT_BACKEND=finbert` can't install natively and the
@@ -330,7 +332,7 @@ sudo tailscale up                          # sign in to the SAME tailnet
 sudo tailscale set --operator="$USER"      # run funnel without sudo
 ```
 
-The VM gets its **own** MagicDNS name (e.g. `stockvm.<tailnet>.ts.net`) → that's its Funnel URL.
+The historical VM got its **own** MagicDNS name (e.g. `stockvm.<tailnet>.ts.net`). This host no longer exists; production uses the Oracle Funnel URL.
 
 ### Run it (inside the VM)
 

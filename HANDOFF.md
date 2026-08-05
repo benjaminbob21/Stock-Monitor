@@ -31,7 +31,7 @@
 
 ### Production AI configuration (2026-08-05)
 
-- Backend production runs on the Oracle VM behind Tailscale Funnel; Multipass remains stopped.
+- Backend production runs on the Oracle VM behind Tailscale Funnel; the former Multipass `stockvm` instance was archived and permanently deleted on 2026-08-05.
 - AI requests use OpenRouter via `OPEN_ROUTER_API_KEY`.
 - AI Summary uses `openai/gpt-4o-mini` for fast, concise plain-language explanations.
 - AI Second Opinion uses `openai/gpt-5.6-luna`; it returns structured BUY/HOLD/SELL JSON with rationale and risks.

@@ -36,6 +36,7 @@
 - AI Summary uses `openai/gpt-4o-mini` for fast, concise plain-language explanations.
 - AI Second Opinion uses `openai/gpt-5.6-luna`; it returns structured BUY/HOLD/SELL JSON with rationale and risks.
 - OpenAI reasoning flags and streaming are not used. The quantitative score remains the signal of record; AI output is advisory only.
+- Oracle FinBERT support is installed and smoke-tested (`torch 2.13.0+cu130`, `transformers 5.14.1`, `ProsusAI/finbert`); the service selects `FinBertAnalyzer` with CPU inference. Oracle has a persistent 4 GB swap file for heavy sequential jobs.
 
 - ✅ Repo initialized (README, `.gitignore`).
 - ✅ Phase 0 **kicked off**; decided to build the engine before any infra.

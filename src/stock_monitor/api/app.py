@@ -788,11 +788,11 @@ def analyst(ticker: str, state: StateDep) -> dict[str, object]:
 
     settings = get_settings()
     upper = ticker.upper()
-    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+    if not settings.llm_analyst_enabled or not (settings.openrouter_api_key):
         return {
             "ticker": upper,
             "opinion": None,
-            "note": "AI analyst disabled — set LLM_ANALYST_ENABLED=1 and OPENAI_API_KEY.",
+            "note": "AI analyst disabled — set LLM_ANALYST_ENABLED=1 and OPEN_ROUTER_API_KEY."
         }
     if state.model is None:
         raise HTTPException(status_code=503, detail="no trained model available")
@@ -855,11 +855,11 @@ def explain(req: ExplainRequest) -> dict[str, object]:
 
     settings = get_settings()
     upper = req.ticker.upper()
-    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+    if not settings.llm_analyst_enabled or not (settings.openrouter_api_key):
         return {
             "ticker": upper,
             "summary": None,
-            "note": "AI explainer disabled — set LLM_ANALYST_ENABLED=1 and OPENAI_API_KEY.",
+            "note": "AI explainer disabled — set LLM_ANALYST_ENABLED=1 and OPEN_ROUTER_API_KEY."
         }
 
     summary = plain_explanation(req.model_dump(), settings)

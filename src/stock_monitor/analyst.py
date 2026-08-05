@@ -3,7 +3,7 @@
 The quantitative model produces the primary conviction score + SHAP drivers. This
 module asks a language model for an independent, plain-language *second opinion* on the
 same evidence — a BUY / HOLD / SELL read with a short rationale and the risks it sees.
-It is disabled unless both ``llm_analyst_enabled`` and ``openai_api_key`` are set, so it
+It is disabled unless both ``llm_analyst_enabled`` and an LLM API key are set, so it
 never costs anything by accident, and any failure degrades to ``None`` (the primary
 score always stands on its own).
 
@@ -98,7 +98,8 @@ def second_opinion(payload: dict, settings: Settings) -> dict | None:
     ``payload`` is a score payload (ticker, conviction, recommendation, drivers,
     risk_flags, and optionally news_sentiment/news_label).
     """
-    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+    api_key = settings.openrouter_api_key
+    if not settings.llm_analyst_enabled or not api_key:
         return None
 
     import requests
@@ -116,8 +117,10 @@ def second_opinion(payload: dict, settings: Settings) -> dict | None:
         resp = requests.post(
             f"{settings.llm_base_url.rstrip('/')}/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://stock-monitor.vercel.app",
+                "X-Title": "Stock Monitor",
             },
             json=body,
             timeout=30,
@@ -184,7 +187,8 @@ def plain_explanation(payload: dict, settings: Settings) -> str | None:
     Reuses an already-computed score payload (ticker, recommendation, conviction,
     drivers) — no re-scoring — and returns plain prose, or ``None`` when disabled/failed.
     """
-    if not settings.llm_analyst_enabled or not settings.openai_api_key:
+    api_key = settings.openrouter_api_key
+    if not settings.llm_analyst_enabled or not api_key:
         return None
 
     import requests
@@ -208,8 +212,8 @@ def plain_explanation(payload: dict, settings: Settings) -> str | None:
     }
 
     body: dict[str, Any] = {
-        "model": settings.llm_model,
-        "temperature": 0.45,
+        "model": settings.llm_explain_model,
+        "temperature": 0.2,
         "max_tokens": 220,
         "messages": [
             {"role": "system", "content": _EXPLAIN_SYSTEM_PROMPT},
@@ -223,8 +227,10 @@ def plain_explanation(payload: dict, settings: Settings) -> str | None:
         resp = requests.post(
             f"{settings.llm_base_url.rstrip('/')}/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://stock-monitor.vercel.app",
+                "X-Title": "Stock Monitor",
             },
             json=body,
             timeout=30,
@@ -235,4 +241,8 @@ def plain_explanation(payload: dict, settings: Settings) -> str | None:
         logger.exception("LLM plain-explanation call failed")
         return None
 
+    # Some weaker/free models echo the instruction block instead of answering.
+    if content.lower().startswith(("we need to", "the user wants", "the task is", "given data:")):
+        logger.warning("LLM explainer returned prompt-like text; discarding it")
+        return None
     return content or None

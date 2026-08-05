@@ -29,6 +29,14 @@
 
 ## State as of this handoff
 
+### Production AI configuration (2026-08-05)
+
+- Backend production runs on the Oracle VM behind Tailscale Funnel; Multipass remains stopped.
+- AI requests use OpenRouter via `OPEN_ROUTER_API_KEY`.
+- AI Summary uses `openai/gpt-4o-mini` for fast, concise plain-language explanations.
+- AI Second Opinion uses `openai/gpt-5.6-luna`; it returns structured BUY/HOLD/SELL JSON with rationale and risks.
+- OpenAI reasoning flags and streaming are not used. The quantitative score remains the signal of record; AI output is advisory only.
+
 - ✅ Repo initialized (README, `.gitignore`).
 - ✅ Phase 0 **kicked off**; decided to build the engine before any infra.
 - ✅ **Phase 0 built on Mac (2026-07-03).** `pyproject.toml`, `src/stock_monitor/*`, `tests/*` all in place; ruff + mypy + pytest green; CLI runs end-to-end (see below).

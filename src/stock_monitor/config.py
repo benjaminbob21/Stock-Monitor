@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,
         extra="ignore",
     )
 
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     def _blank_placeholder_uses_default(cls, data: object) -> object:
         """Treat empty `.env` placeholders as "unset" so the field default applies.
 
-        Lets users pre-stage blank keys (e.g. ``OPENAI_API_KEY=`` /
+        Lets users pre-stage blank keys (e.g. ``OPEN_ROUTER_API_KEY=`` /
         ``LLM_ANALYST_ENABLED=``) and fill them in later without breaking startup.
         Blank strings are dropped only for non-``str`` fields (bool/int/float);
         string fields keep ``""`` as their intended "disabled" sentinel.
@@ -106,11 +107,17 @@ class Settings(BaseSettings):
     backtest_weekly: bool = True
     backtest_hour: int = 4  # runs after the weekly retrain, same day
 
-    # LLM "AI analyst" second opinion (optional, has per-call cost). Empty key = disabled.
+    # OpenRouter-backed LLM "AI analyst" second opinion (optional, has per-call cost).
+    # Empty key = disabled. The legacy OpenAI setting is retained only for config compatibility.
     llm_analyst_enabled: bool = False
+    openrouter_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY"),
+    )
     openai_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "openai/gpt-5.6-luna"
+    llm_explain_model: str = "openai/gpt-4o-mini"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
 
     # Optional data keys (activated when set).
     finnhub_api_key: str = ""

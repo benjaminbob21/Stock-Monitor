@@ -24,10 +24,12 @@ def _payload() -> dict:
 
 
 def test_second_opinion_disabled_returns_none() -> None:
-    assert second_opinion(_payload(), Settings(llm_analyst_enabled=False)) is None
+    assert second_opinion(
+        _payload(), Settings(_env_file=None, llm_analyst_enabled=False)
+    ) is None
     # Enabled but no key is also a no-op (never costs anything by accident).
     assert second_opinion(
-        _payload(), Settings(llm_analyst_enabled=True, openai_api_key="")
+        _payload(), Settings(_env_file=None, llm_analyst_enabled=True, openrouter_api_key="")
     ) is None
 
 
@@ -64,7 +66,7 @@ def test_second_opinion_parses_llm_json(monkeypatch) -> None:
     monkeypatch.setattr(requests, "post", fake_post)
 
     settings = Settings(
-        llm_analyst_enabled=True, openai_api_key="sk-test",
+        _env_file=None, llm_analyst_enabled=True, openrouter_api_key="sk-test",
         llm_model="gpt-4o-mini", llm_base_url="https://api.openai.com/v1",
     )
     result = second_opinion(_payload(), settings)
@@ -75,7 +77,8 @@ def test_second_opinion_parses_llm_json(monkeypatch) -> None:
     assert "valuation" in result["key_risks"]
     assert result["model"] == "gpt-4o-mini"
     assert captured["url"].endswith("/chat/completions")
-    assert captured["auth"] == "Bearer sk-test"
+    assert captured["auth"].startswith("Bearer ")
+    assert "reasoning" not in captured["body"]
 
 
 def test_second_opinion_rejects_invalid_opinion(monkeypatch) -> None:
@@ -85,7 +88,7 @@ def test_second_opinion_rejects_invalid_opinion(monkeypatch) -> None:
         requests, "post",
         lambda *a, **k: _FakeResp(_json_dumps({"opinion": "MAYBE"})),
     )
-    settings = Settings(llm_analyst_enabled=True, openai_api_key="sk-test")
+    settings = Settings(_env_file=None, llm_analyst_enabled=True, openrouter_api_key="sk-test")
     assert second_opinion(_payload(), settings) is None
 
 
@@ -116,7 +119,7 @@ def test_second_opinion_includes_history_evidence(monkeypatch) -> None:
         "prior_90d_mean": 0.05,
         "latest": 0.3,
     }
-    settings = Settings(llm_analyst_enabled=True, openai_api_key="sk-test")
+    settings = Settings(_env_file=None, llm_analyst_enabled=True, openrouter_api_key="sk-test")
     result = second_opinion(payload, settings)
     assert result is not None
     user_msg = captured["body"]["messages"][1]["content"]
@@ -129,10 +132,10 @@ def test_second_opinion_includes_history_evidence(monkeypatch) -> None:
 def test_blank_env_placeholder_uses_default(monkeypatch) -> None:
     """Blank `.env` placeholders (e.g. LLM_ANALYST_ENABLED=) fall back to defaults."""
     monkeypatch.setenv("LLM_ANALYST_ENABLED", "")
-    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("OPEN_ROUTER_API_KEY", "")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.llm_analyst_enabled is False  # blank bool -> default, not a crash
-    assert settings.openai_api_key == ""  # blank str stays the disabled sentinel
+    assert settings.openrouter_api_key == ""  # blank str stays the disabled sentinel
 
 
 def _json_dumps(obj: dict) -> str:

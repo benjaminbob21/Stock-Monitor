@@ -36,3 +36,8 @@ export function toneCaret(tone: Tone): string {
 export function prettyFeature(feature: string): string {
   return feature.replace(/_/g, " ");
 }
+
+/** Parse backend timestamps, which are UTC even when the offset is omitted. */
+export function parseBackendDate(value: string): Date {
+  return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`);
+}

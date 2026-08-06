@@ -8,6 +8,7 @@ import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { StockDetailSheet } from "@/components/StockDetailSheet";
+import { parseBackendDate } from "@/lib/ui";
 import type {
   AnalystResponse,
   ApiError,
@@ -468,7 +469,7 @@ export default function Home() {
             </div>
             <p className="opps-meta">
               {scannedAt
-                ? `scanned ${new Date(scannedAt).toLocaleString()}`
+                ? `scanned ${parseBackendDate(scannedAt).toLocaleString()}`
                 : "not scanned yet"}
             </p>
             {newsDaysSince !== null && (

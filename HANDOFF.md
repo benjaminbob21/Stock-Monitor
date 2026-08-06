@@ -38,6 +38,7 @@
 - OpenAI reasoning flags and streaming are not used. The quantitative score remains the signal of record; AI output is advisory only.
 - Oracle FinBERT support is installed and smoke-tested (`torch 2.13.0+cu130`, `transformers 5.14.1`, `ProsusAI/finbert`); the service selects `FinBertAnalyzer` with CPU inference. Oracle has a persistent 4 GB swap file for heavy sequential jobs.
 - Weekly model retraining is enabled in Oracle production: Sundays at 03:00, followed by the weekly backtest at 04:00. The scheduler refreshes the persisted model automatically; quantitative performance must still be monitored rather than assumed to improve.
+- Backend timestamps are recorded in UTC; the dashboard explicitly parses offset-less backend timestamps as UTC before converting them to the user's local timezone.
 
 - ✅ Repo initialized (README, `.gitignore`).
 - ✅ Phase 0 **kicked off**; decided to build the engine before any infra.

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -705,7 +706,7 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
 
 def build_scheduler(settings: Settings, notifier: Notifier) -> BlockingScheduler:
     """A blocking scheduler for the standalone `stock-monitor-scheduler` command."""
-    scheduler = BlockingScheduler()
+    scheduler = BlockingScheduler(timezone=ZoneInfo(settings.scheduler_timezone))
     _add_jobs(scheduler, settings, notifier)
     return scheduler
 
@@ -714,7 +715,7 @@ def build_background_scheduler(
     settings: Settings, notifier: Notifier
 ) -> BackgroundScheduler:
     """A non-blocking scheduler to run in-process with the API (one DuckDB owner)."""
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(timezone=ZoneInfo(settings.scheduler_timezone))
     _add_jobs(scheduler, settings, notifier)
     return scheduler
 

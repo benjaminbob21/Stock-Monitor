@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     sentiment_backend: str = "vader"  # "vader" (default) or "finbert" (needs [finbert])
 
     # Scheduler + heartbeat.
+    scheduler_timezone: str = "America/Chicago"
     scan_hour: int = 22  # local hour for the daily universe scan
     # Nightly-scan breadth: "default" (curated ~48, the ranked page) or "sp500"
     # (full index, slow discovery). The ranked page + paper picks read this list, so

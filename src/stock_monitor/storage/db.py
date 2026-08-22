@@ -19,6 +19,7 @@ from types import TracebackType
 import duckdb
 import pandas as pd
 
+from stock_monitor.events import EventRecord, normalize_event
 from stock_monitor.features.builder import FEATURE_COLUMNS
 
 _FEATURE_INSERT_COLUMNS = (
@@ -150,6 +151,20 @@ CREATE TABLE IF NOT EXISTS news_articles (
     backend VARCHAR,
     ingested_at TIMESTAMP DEFAULT now(),
     PRIMARY KEY (ticker, published, headline)
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    event_id VARCHAR PRIMARY KEY,
+    ticker VARCHAR NOT NULL,
+    headline VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL,
+    known_at TIMESTAMPTZ NOT NULL,
+    url VARCHAR,
+    sentiment DOUBLE,
+    category VARCHAR NOT NULL,
+    importance DOUBLE NOT NULL,
+    ingested_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS news_backfill_state (
@@ -298,8 +313,8 @@ class Storage:
         """Return the row count of one of the known tables."""
         if table not in {
             "features", "scores", "quarantine", "opportunities", "runs", "positions",
-            "alerts", "paper_picks", "news_sentiment", "news_articles", "backtest_results",
-            "macro_series",
+            "alerts", "paper_picks", "news_sentiment", "news_articles", "events",
+            "backtest_results", "macro_series",
         }:
             raise ValueError(f"unknown table: {table}")
         result = self._con.execute(f"SELECT count(*) FROM {table}").fetchone()
@@ -499,6 +514,74 @@ class Storage:
     def read_features(self) -> pd.DataFrame:
         """Return all stored feature rows as a DataFrame."""
         return self._con.execute("SELECT * FROM features ORDER BY ticker, as_of").df()
+
+    # --------------------------------------------------------------- event records
+    def upsert_events(self, events: list[EventRecord]) -> int:
+        """Persist normalized events, retaining the earliest-known copy per ID.
+
+        Replaying a provider page is safe: an existing event is only replaced when
+        the incoming copy has an earlier ``known_at`` timestamp.
+        """
+        if not events:
+            return 0
+        unique: dict[str, EventRecord] = {}
+        for raw in events:
+            event = normalize_event(raw)
+            previous = unique.get(event.event_id)
+            if previous is None or event.known_at < previous.known_at:
+                unique[event.event_id] = event
+        for event_id, event in unique.items():
+            self._con.execute(
+                """
+                INSERT INTO events
+                    (event_id, ticker, headline, source, published_at, known_at,
+                     url, sentiment, category, importance)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (event_id) DO UPDATE SET
+                    ticker = excluded.ticker,
+                    headline = excluded.headline,
+                    source = excluded.source,
+                    published_at = excluded.published_at,
+                    known_at = excluded.known_at,
+                    url = excluded.url,
+                    sentiment = excluded.sentiment,
+                    category = excluded.category,
+                    importance = excluded.importance,
+                    ingested_at = now()
+                WHERE excluded.known_at < events.known_at
+                """,
+                [
+                    event_id,
+                    event.ticker,
+                    event.headline,
+                    event.source,
+                    event.published_at,
+                    event.known_at,
+                    event.url,
+                    event.sentiment,
+                    event.category,
+                    event.importance,
+                ],
+            )
+        return len(unique)
+
+    def read_events(self, ticker: str | None = None) -> list[dict]:
+        """Return persisted events, optionally filtered by ticker."""
+        query = (
+            "SELECT event_id, ticker, headline, source, published_at, known_at, "
+            "url, sentiment, category, importance, ingested_at FROM events"
+        )
+        params: list[object] = []
+        if ticker:
+            query += " WHERE ticker = ?"
+            params.append(ticker.upper())
+        query += " ORDER BY published_at, event_id"
+        rows = self._con.execute(query, params).fetchall()
+        keys = (
+            "event_id", "ticker", "headline", "source", "published_at", "known_at",
+            "url", "sentiment", "category", "importance", "ingested_at",
+        )
+        return [dict(zip(keys, row, strict=True)) for row in rows]
 
     # ------------------------------------------------------------ news sentiment
     def upsert_news_sentiment(self, df: pd.DataFrame) -> int:

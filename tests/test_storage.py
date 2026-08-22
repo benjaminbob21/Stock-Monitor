@@ -8,6 +8,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from stock_monitor.events import EventRecord
 from stock_monitor.storage import Storage
 
 
@@ -56,6 +57,46 @@ def test_insert_score_and_quarantine() -> None:
         bad["quarantine_reason"] = "vol_3m=-1.0"
         store.record_quarantine(bad)
         assert store.count("quarantine") == 1
+
+
+def test_events_are_idempotent_and_keep_earliest_known_copy() -> None:
+    published = dt.datetime(2026, 1, 2, 15, 0, tzinfo=dt.UTC)
+    later = EventRecord(
+        ticker="aaa", headline="Later copy", source="Wire", published_at=published,
+        known_at=dt.datetime(2026, 1, 2, 15, 5, tzinfo=dt.UTC), url="https://wire.test/a?utm_source=x",
+    )
+    earlier = EventRecord(
+        ticker="AAA", headline="Earliest copy", source="Wire", published_at=published,
+        known_at=dt.datetime(2026, 1, 2, 15, 1, tzinfo=dt.UTC), url="https://wire.test/a",
+        sentiment=0.8, category="earnings", importance=0.75,
+    )
+    with Storage(":memory:") as store:
+        assert store.upsert_events([later, later]) == 1
+        assert store.upsert_events([later, earlier]) == 1
+        assert store.count("events") == 1
+        row = store.read_events("aaa")[0]
+        assert row["headline"] == "Earliest copy"
+        assert row["known_at"].tzinfo is not None
+        assert row["known_at"] == dt.datetime(2026, 1, 2, 15, 1, tzinfo=dt.UTC)
+        assert row["sentiment"] == 0.8
+
+
+def test_events_table_is_created_when_migrating_existing_database(tmp_path: Path) -> None:
+    path = str(tmp_path / "old-events.duckdb")
+    con = duckdb.connect(path)
+    con.execute(
+        "CREATE TABLE news_articles (ticker VARCHAR, published TIMESTAMP, headline VARCHAR)"
+    )
+    con.close()
+
+    with Storage(path) as store:
+        event = EventRecord(
+            ticker="AAA", headline="Existing DB", source="Feed",
+            published_at=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+            known_at=dt.datetime(2026, 1, 2, 0, 1, tzinfo=dt.UTC),
+        )
+        store.upsert_events([event])
+        assert store.count("events") == 1
 
 
 def test_older_features_table_is_migrated(tmp_path: Path) -> None:

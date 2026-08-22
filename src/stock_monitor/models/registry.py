@@ -7,8 +7,12 @@ identically, and persist the fitted model with joblib for the API to load.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import joblib
@@ -43,11 +47,73 @@ def compute_model_version(model: Scoreable, extra: str = "") -> str:
     return f"lgbm-{digest}"
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def save_model(model: Scoreable, path: str) -> str:
-    """Persist a fitted model to ``path`` (parent dirs created as needed)."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, path)
-    return path
+    """Version and promote a model while retaining a one-generation rollback copy."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    version = compute_model_version(model)
+    versioned = target.with_name(f"{target.stem}.{version}{target.suffix}")
+    previous = target.with_name(f"{target.stem}.previous{target.suffix}")
+    manifest = target.with_name(f"{target.stem}.manifest.json")
+
+    with tempfile.NamedTemporaryFile(
+        dir=target.parent, suffix=target.suffix, delete=False
+    ) as handle:
+        temporary = Path(handle.name)
+    try:
+        joblib.dump(model, temporary)
+        os.replace(temporary, versioned)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    if target.exists():
+        _atomic_copy(target, previous)
+    _atomic_copy(versioned, target)
+    metadata = {
+        "model_version": version,
+        "active_artifact": versioned.name,
+        "previous_artifact": previous.name if previous.exists() else None,
+        "sha256": _sha256(versioned),
+        "saved_at": dt.datetime.now(dt.UTC).isoformat(),
+    }
+    manifest.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    return str(target)
+
+
+def restore_previous_model(path: str) -> str:
+    """Restore the last promoted model; raise ``FileNotFoundError`` if unavailable."""
+    target = Path(path)
+    previous = target.with_name(f"{target.stem}.previous{target.suffix}")
+    if not previous.exists():
+        raise FileNotFoundError(f"no previous model artifact exists for {target}")
+    _atomic_copy(previous, target)
+    return str(target)
+
+
+def read_model_manifest(path: str) -> dict[str, object] | None:
+    """Read promotion metadata, returning ``None`` when no manifest exists."""
+    manifest = Path(path).with_name(f"{Path(path).stem}.manifest.json")
+    if not manifest.exists():
+        return None
+    return json.loads(manifest.read_text(encoding="utf-8"))
 
 
 def load_model(path: str) -> Scoreable | None:

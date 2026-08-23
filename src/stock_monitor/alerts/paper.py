@@ -80,30 +80,35 @@ def _format_drivers(drivers: list[str]) -> list[str]:
     return list(drivers)
 
 
+def event_records_from_rows(rows: list[dict]) -> list[EventRecord]:
+    """Convert raw ``read_events`` rows into PIT-normalized EventRecords."""
+    records: list[EventRecord] = []
+    for row in rows:
+        records.append(
+            EventRecord(
+                ticker=row["ticker"],
+                headline=row["headline"],
+                source=row["source"],
+                published_at=as_utc(row["published_at"]),
+                known_at=as_utc(row["known_at"]),
+                url=row["url"],
+                sentiment=row.get("sentiment"),
+                category=row.get("category", "other"),
+                importance=row.get("importance", 0.0),
+            )
+        )
+    return records
+
+
 def _events_for_ticker(
     storage: Storage, ticker: str, as_of: dt.datetime, news_window_days: int
 ) -> list[EventRecord]:
     """Return stored events knowable on/before ``as_of`` (PIT-safe filtering)."""
     since = as_of - dt.timedelta(days=news_window_days)
-    rows = storage.read_events(ticker)
     events: list[EventRecord] = []
-    for row in rows:
-        published = as_utc(row["published_at"])
-        known = as_utc(row["known_at"])
-        if known <= as_of and published >= since:
-            events.append(
-                EventRecord(
-                    ticker=row["ticker"],
-                    headline=row["headline"],
-                    source=row["source"],
-                    published_at=published,
-                    known_at=known,
-                    url=row["url"],
-                    sentiment=row.get("sentiment"),
-                    category=row.get("category", "other"),
-                    importance=row.get("importance", 0.0),
-                )
-            )
+    for record in event_records_from_rows(storage.read_events(ticker)):
+        if record.known_at <= as_of and record.published_at >= since:
+            events.append(record)
     return events
 
 

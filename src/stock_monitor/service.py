@@ -11,8 +11,10 @@ import datetime as dt
 
 import pandas as pd
 
+from stock_monitor.alerts.paper import event_records_from_rows
 from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.features.builder import build_feature_row
+from stock_monitor.features.events import build_event_features
 from stock_monitor.features.schema import validate_features
 from stock_monitor.models.scorer import (
     Scoreable,
@@ -151,6 +153,16 @@ def score_ticker(
     row = build_feature_row(ticker, prices, facts, as_of, sentiment_lookup=sentiment_lookup)
     if row is None:
         raise InsufficientHistory(ticker)
+
+    # Enrich with PIT event features when stored events exist for this ticker, so
+    # short-horizon (and any event-aware) models see the same inputs at serve time
+    # as they saw in training. Missing events leave the NaN-means-absent semantics.
+    if storage is not None:
+        row.update(
+            build_event_features(
+                event_records_from_rows(storage.read_events(ticker)), as_of
+            )
+        )
 
     valid, quarantined, _ = validate_features(pd.DataFrame([row]))
     if valid.empty:

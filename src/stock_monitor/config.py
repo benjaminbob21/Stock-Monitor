@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     model_path_short: str = "models/latest_3m.joblib"
     label_window_months_short: int = 3
 
+    # Event-driven 1-4 week short-horizon model (separate feature set + labels).
+    model_path_short_event: str = "models/latest_short_event.joblib"
+
     # How many years of price history to pull when TRAINING. Deeper = more labelled
     # rows + a richer similar-setups base rate. Tiingo's free tier already returns
     # ~35 years for US large-caps, so this costs nothing. (Fundamentals coverage from

@@ -11,7 +11,7 @@ import datetime as dt
 
 import pandas as pd
 
-from stock_monitor.alerts.paper import event_records_from_rows
+from stock_monitor.alerts.paper import _DRIVER_FEATURES, event_records_from_rows
 from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.events import build_event_features
@@ -130,6 +130,7 @@ def score_ticker(
     today: dt.date | None = None,
     short_model: Scoreable | None = None,
     earnings_provider: object | None = None,
+    short_event_model: Scoreable | None = None,
 ) -> dict[str, object]:
     """Score a single ticker on demand and return a JSON-ready payload."""
     ticker = ticker.upper()
@@ -231,6 +232,34 @@ def score_ticker(
             risk_flags=flags,
         )
 
+    # Event-driven 1-4 week short-horizon read (separate model + event features).
+    short_event: dict[str, object] | None = None
+    if short_event_model is not None and not is_low_signal(short_event_model):
+        from stock_monitor.alerts.paper import CANDIDATE_CONVICTION_THRESHOLD
+        from stock_monitor.models.short_horizon import predict_short_conviction
+
+        raw_short = predict_short_conviction(short_event_model, row)
+        is_candidate = raw_short >= CANDIDATE_CONVICTION_THRESHOLD
+        recent_events = [
+            {
+                "headline": r.headline,
+                "source": r.source,
+                "published_at": r.published_at.isoformat(),
+                "sentiment": r.sentiment,
+            }
+            for r in sorted(
+                event_records_from_rows(storage.read_events(ticker)),
+                key=lambda r: r.known_at,
+                reverse=True,
+            )[:5]
+        ] if storage is not None else []
+        short_event = {
+            "conviction": raw_short,
+            "candidate": is_candidate,
+            "top_drivers": [f for f in _DRIVER_FEATURES if f in row],
+            "recent_events": recent_events,
+        }
+
     return {
         "ticker": ticker,
         "as_of": as_of.isoformat(),
@@ -250,6 +279,8 @@ def score_ticker(
         "conviction_3m": conviction_3m,
         "recommendation_3m": recommendation_3m,
         "near_term_note": near_term_note,
+        # Event-driven 1-4 week read (None when no short-event model is deployed).
+        "short_event": short_event,
         "disclaimer": _GUARDRAIL
         + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
     }

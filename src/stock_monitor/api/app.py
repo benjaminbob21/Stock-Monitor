@@ -74,6 +74,7 @@ class AppState:
     sentiment_negative_threshold: float = -0.25
     earnings_provider: EarningsProvider | None = None
     symbol_directory: object | None = None
+    model_short_event: Scoreable | None = None
 
 
 _state: AppState | None = None
@@ -170,6 +171,7 @@ def build_state() -> AppState:
         sentiment_negative_threshold=settings.sentiment_negative_threshold,
         earnings_provider=get_earnings_provider(settings),
         symbol_directory=SymbolDirectory(),
+        model_short_event=load_model(settings.model_path_short_event),
     )
 
 
@@ -261,6 +263,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                     storage=store,
                     short_model=state.model_short,
                     earnings_provider=state.earnings_provider,
+                    short_event_model=state.model_short_event,
                 )
         else:
             result = score_ticker(
@@ -273,6 +276,7 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
                 storage=None,
                 short_model=state.model_short,
                 earnings_provider=state.earnings_provider,
+                short_event_model=state.model_short_event,
             )
         SCORES_SERVED.labels(outcome="ok").inc()
         # Attach the full company name (for the scoring card header); best-effort.

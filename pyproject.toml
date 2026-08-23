@@ -45,6 +45,8 @@ stock-monitor-backtest = "stock_monitor.backtest:main"
 stock-monitor-scan = "stock_monitor.scan:main"
 stock-monitor-scheduler = "stock_monitor.scheduler:main"
 stock-monitor-backfill = "stock_monitor.backfill:main"
+stock-monitor-short-train = "stock_monitor.short_cli:main"
+stock-monitor-short-alerts = "stock_monitor.short_cli:alerts_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

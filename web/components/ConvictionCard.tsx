@@ -85,6 +85,28 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           </div>
         )}
 
+      {data.short_event && (
+        <div className="horizon" style={{ marginTop: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
+            <b>event signal · 1–4 weeks</b>
+            <strong style={{ color: data.short_event.candidate ? "var(--green)" : "var(--muted)" }}>
+              {data.short_event.conviction}/100{data.short_event.candidate ? " · candidate" : ""}
+            </strong>
+          </div>
+          {data.short_event.recent_events.length > 0 ? (
+            <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
+              {data.short_event.recent_events.slice(0, 3).map((event, index) => (
+                <li key={`${event.published_at}-${index}`}>
+                  {event.headline} <span className="near-term-note">({event.source})</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="near-term-note">No recent qualifying events.</span>
+          )}
+        </div>
+      )}
+
       {data.days_to_earnings !== null &&
         data.days_to_earnings !== undefined && (
           <p

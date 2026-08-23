@@ -5,6 +5,18 @@ export interface Driver {
   direction: string;
 }
 
+export interface ShortEventSignal {
+  conviction: number;
+  candidate: boolean;
+  top_drivers: string[];
+  recent_events: Array<{
+    headline: string;
+    source: string;
+    published_at: string;
+    sentiment: number | null;
+  }>;
+}
+
 export interface ScoreResponse {
   ticker: string;
   name?: string | null;
@@ -24,6 +36,7 @@ export interface ScoreResponse {
   recommendation_3m?: string | null;
   near_term_note?: string | null;
   days_to_earnings?: number | null;
+  short_event?: ShortEventSignal | null;
 }
 
 export interface AnalystOpinion {

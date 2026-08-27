@@ -19,6 +19,7 @@ import datetime as dt
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from stock_monitor.config import Settings
 
@@ -227,19 +228,19 @@ class FinBertAnalyzer(SentimentAnalyzer):
     name = "finbert"
 
     def __init__(self) -> None:
-        from typing import Any
 
         from transformers import pipeline
 
         self._pipe: Any = pipeline(
-            "text-classification", model="ProsusAI/finbert"
+            "text-classification", model="ProsusAI/finbert", top_k=None
         )
 
 
 
     @staticmethod
-    def _to_probs(result: list[dict]) -> dict[str, float]:
-        return {str(r["label"]).lower(): float(r["score"]) for r in result}
+    def _to_probs(result: Any) -> dict[str, float]:
+        rows = result[0] if result and isinstance(result[0], list) else result
+        return {str(r["label"]).lower(): float(r["score"]) for r in rows}
 
     def score(self, text: str) -> float:
         probs = self._to_probs(self._pipe(text[:512]))
@@ -257,8 +258,8 @@ class FinBertAnalyzer(SentimentAnalyzer):
         out = self._pipe(trimmed, batch_size=batch_size, truncation=True)
         return [
             round(
-                self._to_probs([item]).get("positive", 0.0)
-                - self._to_probs([item]).get("negative", 0.0),
+                self._to_probs(item).get("positive", 0.0)
+                - self._to_probs(item).get("negative", 0.0),
                 4,
             )
             for item in out

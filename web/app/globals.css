@@ -934,6 +934,17 @@ body.sheet-open {
   color: var(--text-strong);
 }
 
+.oppsrc {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--faint);
+  border: 1px solid color-mix(in srgb, var(--faint) 40%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  vertical-align: middle;
+}
+
 .oppscore {
   font-weight: 800;
   font-size: 19px;

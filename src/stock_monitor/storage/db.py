@@ -496,6 +496,39 @@ class Storage:
             for r in rows
         ]
 
+    def read_recent_scores(self, within_days: int = 3) -> list[dict]:
+        """Return the newest score per ticker from the ``scores`` table.
+
+        Only scores emitted within ``within_days`` are included, so stale one-off
+        lookups don't haunt the ranked page forever. This lets tickers scored
+        on-demand (via search or the detail card — names outside the scan universe)
+        surface in discovery alongside the nightly ranking.
+        """
+        rows = self._con.execute(
+            """
+            SELECT s.ticker, s.as_of, s.conviction, s.recommendation,
+                   s.risk_flags, s.model_version
+            FROM scores s
+            WHERE s.as_of >= current_date - ? * INTERVAL '1' DAY
+              AND s.scored_at = (
+                    SELECT max(s2.scored_at) FROM scores s2
+                    WHERE s2.ticker = s.ticker
+              )
+            """,
+            [within_days],
+        ).fetchall()
+        return [
+            {
+                "ticker": r[0],
+                "as_of": r[1].isoformat() if r[1] is not None else None,
+                "conviction": r[2],
+                "recommendation": r[3],
+                "risk_flags": json.loads(r[4]) if r[4] else [],
+                "model_version": r[5],
+            }
+            for r in rows
+        ]
+
     def read_features(self) -> pd.DataFrame:
         """Return all stored feature rows as a DataFrame."""
         return self._con.execute("SELECT * FROM features ORDER BY ticker, as_of").df()

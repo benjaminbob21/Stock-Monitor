@@ -34,7 +34,14 @@ export function OpportunitiesList({
             aria-label={`${o.ticker}, rank ${o.rank}, conviction ${o.capped_conviction} out of 100, ${o.recommendation}`}
           >
             <span className="opprank">#{o.rank}</span>
-            <span className="oppticker">{o.ticker}</span>
+            <span className="oppticker">
+              {o.ticker}
+              {o.source === "on_demand" && (
+                <span className="oppsrc" title="Scored on demand (found via search), not part of the nightly universe scan">
+                  ✓ found
+                </span>
+              )}
+            </span>
             <span className="oppscore" style={{ color }}>
               {o.capped_conviction}
               <small>/100</small>

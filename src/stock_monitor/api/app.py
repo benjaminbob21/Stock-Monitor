@@ -311,15 +311,73 @@ def search_symbols(state: StateDep, q: str = "", limit: int = 15) -> dict[str, o
 
 
 @app.get("/opportunities")
+def _merge_on_demand_scores(
+    ranked: list[dict], recent: list[dict]
+) -> tuple[list[dict], int]:
+    """Merge recent on-demand scores into a scan ranking, re-rank, return (rows, added).
+
+    Tickers the user looked up manually (outside the nightly universe) get discovered
+    into the ranked page when their conviction is fresh enough to matter. Scan rows
+    keep their identity; on-demand entries are marked ``source="on_demand"`` so the
+    UI can be honest about where each row came from. Duplicates (a scan ticker also
+    scored on demand) always keep the *scan* row.
+    """
+    scan_tickers = {r["ticker"] for r in ranked}
+    extras = [
+        {
+            "rank": 0,
+            "ticker": s["ticker"],
+            "conviction": s["conviction"],
+            "capped_conviction": s["conviction"],
+            "recommendation": s["recommendation"],
+            "as_of": s["as_of"],
+            "risk_flags": s["risk_flags"],
+            "model_version": s["model_version"],
+            "scan_ts": None,
+            "source": "on_demand",
+        }
+        for s in recent
+        if s["ticker"] not in scan_tickers
+    ]
+    if not extras:
+        for i, r in enumerate(ranked, start=1):
+            r["rank"] = i
+            r.setdefault("source", "scan")
+        return ranked, 0
+
+    merged = sorted(
+        [*[{**r, "source": "scan"} for r in ranked], *extras],
+        key=lambda r: r["capped_conviction"],
+        reverse=True,
+    )
+    for i, r in enumerate(merged, start=1):
+        r["rank"] = i
+    return merged, len(extras)
+
+
 def opportunities(state: StateDep, limit: int = 20) -> dict[str, object]:
-    """Return the latest ranked "top-N to buy now" list from the most recent scan."""
+    """Return the latest ranked "top-N to buy now" list from the most recent scan.
+
+    Freshly-scored on-demand tickers (searched manually, outside the nightly
+    universe) are merged in so discovery isn't capped at the curated list.
+    """
     if not state.db_path:
         return {"scanned_at": None, "opportunities": [], "note": "storage unavailable"}
     with Storage(state.db_path) as store:
         ranked = store.read_latest_opportunities(limit=limit)
-    scanned_at = ranked[0]["scan_ts"] if ranked else None
+        try:
+            recent = store.read_recent_scores(within_days=3)
+        except Exception:  # noqa: BLE001 — merge is an enhancement; never break list
+            recent = []
+    ranked, on_demand_count = _merge_on_demand_scores(ranked, recent)
+    scanned_at = next((r.get("scan_ts") for r in ranked if r.get("scan_ts")), None)
     note = None if ranked else "no scan yet — run `stock-monitor-scan`"
-    return {"scanned_at": scanned_at, "opportunities": ranked, "note": note}
+    return {
+        "scanned_at": scanned_at,
+        "opportunities": ranked,
+        "on_demand_count": on_demand_count,
+        "note": note,
+    }
 
 
 @app.get("/recommendations")
@@ -329,8 +387,13 @@ def recommendations(state: StateDep) -> dict[str, object]:
         return {"scanned_at": None, "recommendations": [], "note": "storage unavailable"}
     with Storage(state.db_path) as store:
         ranked = store.read_latest_opportunities(limit=1000)
+        try:
+            recent = store.read_recent_scores(within_days=3)
+        except Exception:  # noqa: BLE001 — merge is an enhancement; never break list
+            recent = []
+    ranked, _ = _merge_on_demand_scores(ranked, recent)
     strong = strong_recommendations(ranked)
-    scanned_at = ranked[0]["scan_ts"] if ranked else None
+    scanned_at = next((r.get("scan_ts") for r in ranked if r.get("scan_ts")), None)
     note = (
         None
         if strong

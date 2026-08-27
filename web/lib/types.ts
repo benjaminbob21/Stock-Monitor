@@ -93,11 +93,14 @@ export interface Opportunity {
   as_of: string | null;
   risk_flags: string[];
   model_version: string | null;
+  /** "scan" (nightly universe) or "on_demand" (scored via a manual lookup). */
+  source?: "scan" | "on_demand";
 }
 
 export interface OpportunitiesResponse {
   scanned_at: string | null;
   opportunities: Opportunity[];
+  on_demand_count?: number;
   note: string | null;
 }
 

@@ -58,6 +58,38 @@ def test_insert_score_and_quarantine() -> None:
         assert store.count("quarantine") == 1
 
 
+def test_read_recent_scores_newest_per_ticker() -> None:
+    with Storage(":memory:") as store:
+        for conviction in (60, 82):
+            store.insert_score(
+                ticker="BLBD",
+                as_of=dt.date.today(),
+                conviction=conviction,
+                recommendation="consider buying",
+                model_version="v-test",
+                fundamentals_known_on=None,
+                drivers=[],
+                risk_flags=[],
+            )
+        store.insert_score(
+            ticker="OLD",
+            as_of=dt.date.today() - dt.timedelta(days=10),
+            conviction=95,
+            recommendation="consider buying",
+            model_version="v-test",
+            fundamentals_known_on=None,
+            drivers=[],
+            risk_flags=[],
+        )
+        recent = store.read_recent_scores(within_days=3)
+        assert len(recent) == 1
+        assert recent[0]["ticker"] == "BLBD"
+        assert recent[0]["conviction"] == 82  # newest score wins
+        # A wider window picks up the stale lookup too.
+        wide = store.read_recent_scores(within_days=30)
+        assert {r["ticker"] for r in wide} == {"BLBD", "OLD"}
+
+
 def test_older_features_table_is_migrated(tmp_path: Path) -> None:
     # Simulate a DB created by an earlier version (pre feature-expansion schema).
     path = str(tmp_path / "old.duckdb")

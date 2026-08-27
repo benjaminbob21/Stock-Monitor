@@ -1009,3 +1009,75 @@ def sell(position_id: str, state: StateDep) -> dict[str, object]:
     if view is None:
         raise HTTPException(status_code=404, detail="position not found")
     return view
+
+
+@app.get("/baskets")
+def list_baskets_endpoint(state: StateDep) -> dict[str, object]:
+    """All joint portfolios, valued as a whole (headline P&L + contributions)."""
+    from stock_monitor.baskets import basket_view
+
+    if not state.db_path:
+        return {"baskets": []}
+    views: list[dict] = []
+    with Storage(state.db_path) as store:
+        for basket in store.list_baskets():
+            items = store.list_basket_items(basket["id"])
+            try:
+                views.append(
+                    basket_view({**basket, "items": items}, state.price_provider)  # type: ignore[arg-type]
+                )
+            except Exception:  # noqa: BLE001 — one stale basket must not hide the rest
+                views.append({**basket, "legs": [], "complete": False})
+    return {"baskets": views}
+
+
+@app.post("/baskets")
+def create_basket_endpoint(request: Request, state: StateDep) -> dict[str, object]:
+    """Create a joint portfolio: total budget split across tickers by percentage."""
+    from stock_monitor.baskets import BasketError, create_basket
+
+    _require_ready(state)
+    body = request.query_params  # tickers/pcts via query: easy, form-friendly
+    name = body.get("name", "")
+    try:
+        total_budget = float(body.get("budget", "0"))
+        tickers = [t for t in (body.get("tickers") or "").split(",") if t.strip()]
+        pcts = [float(p) for p in (body.get("pcts") or "").split(",") if p.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"bad numbers: {exc}") from exc
+    if len(tickers) != len(pcts):
+        raise HTTPException(
+            status_code=422, detail="tickers and pcts must have the same length"
+        )
+    try:
+        with Storage(state.db_path) as store:  # type: ignore[arg-type]
+            return create_basket(
+                name or "Joint portfolio",
+                total_budget,
+                tickers,
+                pcts,
+                price_provider=state.price_provider,  # type: ignore[arg-type]
+                storage=store,
+            )
+    except BasketError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/baskets/{basket_id}/close")
+def close_basket_endpoint(basket_id: str, state: StateDep) -> dict[str, object]:
+    """Close a whole joint portfolio at today's prices."""
+    from stock_monitor.baskets import _quote_or_last_close
+
+    with Storage(state.db_path) as store:  # type: ignore[arg-type]
+        if store.get_basket(basket_id) is None:
+            raise HTTPException(status_code=404, detail="basket not found")
+        today = dt.date.today()
+        for item in store.list_basket_items(basket_id):
+            if item["status"] != "open":
+                continue
+            quote = _quote_or_last_close(item["ticker"], state.price_provider, today)  # type: ignore[arg-type]
+            store.sell_basket_item(
+                item["id"], dt.datetime.now(), float(quote or item["entry_price"])
+            )
+        store.close_basket(basket_id, dt.datetime.now())
+    return {"ok": True}

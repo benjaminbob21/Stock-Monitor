@@ -89,6 +89,29 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS baskets (
+    id VARCHAR PRIMARY KEY,
+    name VARCHAR,
+    created_at TIMESTAMP DEFAULT now(),
+    total_budget DOUBLE,
+    status VARCHAR DEFAULT 'open',
+    closed_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS basket_items (
+    id VARCHAR PRIMARY KEY,
+    basket_id VARCHAR,
+    ticker VARCHAR,
+    pct DOUBLE,
+    budget DOUBLE,
+    entry_price DOUBLE,
+    shares DOUBLE,
+    entry_conviction INTEGER,
+    status VARCHAR DEFAULT 'open',
+    sold_at TIMESTAMP,
+    sold_price DOUBLE
+);
+
 CREATE TABLE IF NOT EXISTS positions (
     id VARCHAR PRIMARY KEY,
     ticker VARCHAR,
@@ -691,6 +714,130 @@ class Storage:
         ).df()
 
     # ------------------------------------------------------------------ paper mode
+    def create_basket(
+        self,
+        basket_id: str,
+        name: str,
+        created_at: dt.datetime,
+        total_budget: float,
+        items: list[dict],
+    ) -> None:
+        """Record a joint portfolio (basket): total budget split across tickers."""
+        self._con.execute(
+            """
+            INSERT INTO baskets (id, name, created_at, total_budget, status)
+            VALUES (?, ?, ?, ?, 'open')
+            """,
+            [basket_id, name, created_at, total_budget],
+        )
+        for item in items:
+            self._con.execute(
+                """
+                INSERT INTO basket_items
+                    (id, basket_id, ticker, pct, budget, entry_price, shares,
+                     entry_conviction, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')
+                """,
+                [
+                    item["id"],
+                    basket_id,
+                    item["ticker"],
+                    item["pct"],
+                    item["budget"],
+                    item["entry_price"],
+                    item["shares"],
+                    item.get("entry_conviction"),
+                ],
+            )
+
+    def _basket_row(self, row: tuple) -> dict:
+        return {
+            "id": row[0],
+            "name": row[1],
+            "created_at": row[2].isoformat() if row[2] is not None else None,
+            "total_budget": row[3],
+            "status": row[4],
+            "closed_at": row[5].isoformat() if row[5] is not None else None,
+        }
+
+    def _basket_item_row(self, row: tuple) -> dict:
+        return {
+            "id": row[0],
+            "basket_id": row[1],
+            "ticker": row[2],
+            "pct": row[3],
+            "budget": row[4],
+            "entry_price": row[5],
+            "shares": row[6],
+            "entry_conviction": row[7],
+            "status": row[8],
+            "sold_at": row[9].isoformat() if row[9] is not None else None,
+            "sold_price": row[10],
+        }
+
+    def list_baskets(self, status: str | None = None) -> list[dict]:
+        """Return baskets, newest first, optionally filtered by status."""
+        if status:
+            rows = self._con.execute(
+                """
+                SELECT id, name, created_at, total_budget, status, closed_at
+                FROM baskets WHERE status = ? ORDER BY created_at DESC
+                """,
+                [status],
+            ).fetchall()
+        else:
+            rows = self._con.execute(
+                """
+                SELECT id, name, created_at, total_budget, status, closed_at
+                FROM baskets ORDER BY created_at DESC
+                """
+            ).fetchall()
+        return [self._basket_row(r) for r in rows]
+
+    def get_basket(self, basket_id: str) -> dict | None:
+        row = self._con.execute(
+            """
+            SELECT id, name, created_at, total_budget, status, closed_at
+            FROM baskets WHERE id = ?
+            """,
+            [basket_id],
+        ).fetchone()
+        return self._basket_row(row) if row is not None else None
+
+    def list_basket_items(self, basket_id: str) -> list[dict]:
+        """Return the constituent legs of a basket, largest weight first."""
+        rows = self._con.execute(
+            """
+            SELECT id, basket_id, ticker, pct, budget, entry_price, shares,
+                   entry_conviction, status, sold_at, sold_price
+            FROM basket_items WHERE basket_id = ? ORDER BY pct DESC
+            """,
+            [basket_id],
+        ).fetchall()
+        return [self._basket_item_row(r) for r in rows]
+
+    def sell_basket_item(
+        self, item_id: str, sold_at: dt.datetime, sold_price: float
+    ) -> None:
+        """Mark one leg of a basket sold at a price (the other legs stay open)."""
+        self._con.execute(
+            "UPDATE basket_items SET status = 'sold', sold_at = ?, sold_price = ? "
+            "WHERE id = ?",
+            [sold_at, sold_price, item_id],
+        )
+
+    def close_basket(self, basket_id: str, closed_at: dt.datetime) -> None:
+        """Mark a whole basket closed (all open legs go with it)."""
+        self._con.execute(
+            "UPDATE baskets SET status = 'closed', closed_at = ? WHERE id = ?",
+            [closed_at, basket_id],
+        )
+        self._con.execute(
+            "UPDATE basket_items SET status = 'sold', sold_at = ? "
+            "WHERE basket_id = ? AND status = 'open'",
+            [closed_at, basket_id],
+        )
+
     def record_paper_pick(
         self,
         *,

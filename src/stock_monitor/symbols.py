@@ -19,6 +19,29 @@ from stock_monitor.config import get_settings
 
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
+# ETFs missing from the SEC registry (it lists only issuers with CIK filers — SPY and
+# QQQ are there, most Vanguard/iShares funds are not). Merged into the directory so
+# index funds are searchable and nameable everywhere: search, stock pages, and baskets.
+# They are NOT in the scan universe — a basket leg needs a price, not a conviction score.
+ETF_OVERLAY: dict[str, str] = {
+    "VOO": "Vanguard S&P 500 ETF",
+    "VTI": "Vanguard Total Stock Market ETF",
+    "VXUS": "Vanguard Total International Stock ETF",
+    "VOOQ": "Vanguard S&P 500 ETF (Neos)",
+    "VGK": "Vanguard FTSE Europe ETF",
+    "VPL": "Vanguard FTSE Pacific ETF",
+    "VWO": "Vanguard FTSE Emerging Markets ETF",
+    "VEA": "Vanguard FTSE Developed Markets ETF",
+    "VUG": "Vanguard Growth ETF",
+    "VTV": "Vanguard Value ETF",
+    "VIG": "Vanguard Dividend Appreciation ETF",
+    "VYM": "Vanguard High Dividend Yield ETF",
+    "IEF": "iShares 7-10 Year Treasury Bond ETF",
+    "TLT": "iShares 20+ Year Treasury Bond ETF",
+    "GLD": "SPDR Gold Shares",
+    "SCHD": "Schwab US Dividend Equity ETF",
+}
+
 
 @dataclass(frozen=True)
 class SymbolMatch:
@@ -54,6 +77,10 @@ class SymbolDirectory:
                             for row in resp.json().values()
                             if row.get("ticker")
                         }
+                        # Overlay fills registry gaps (Vanguard/iShares ETFs) without
+                        # shadowing real registry entries.
+                        for etf, name in ETF_OVERLAY.items():
+                            self._by_ticker.setdefault(etf, name)
                     except Exception:  # noqa: BLE001 — directory is best-effort
                         # A network hiccup must not break scoring/search; treat as empty
                         # (names simply won't show) and retry on the next call.

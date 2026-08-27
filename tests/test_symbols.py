@@ -63,5 +63,16 @@ def test_search_empty_query_returns_nothing(directory: SymbolDirectory) -> None:
 
 
 def test_search_respects_limit(directory: SymbolDirectory) -> None:
+    assert len(directory.search("a", limit=2)) == 2
+
+
+def test_etf_overlay_searchable_and_non_shadowing(
+    directory: SymbolDirectory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ETFs missing from the SEC file (VOO) resolve via the overlay; SEC entries win."""
+    assert directory.name_for("VOO") == "Vanguard S&P 500 ETF"
+    assert directory.search("VOO")[0].ticker == "VOO"
+    # Registry entries are never shadowed by the overlay.
+    assert directory.name_for("AAPL") == "Apple Inc."
     # A substring shared by several names, capped to 1 result.
     assert len(directory.search("inc", limit=1)) == 1

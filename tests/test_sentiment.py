@@ -63,6 +63,31 @@ def test_contrast_aware_scoring_reads_trailing_verdict() -> None:
     assert score < -0.15
 
 
+class _NeutralFallbackAnalyzer(VaderAnalyzer):
+    """Mimics FinBERT: neutral on each clause AND on the whole text."""
+
+    def score(self, text: str) -> float:
+        if text in (
+            "Tesla: Potential Merger Has Some Upside,",
+            "I'm Still Bearish (Upgrade)",
+        ):
+            return 0.0
+        return 0.05
+
+
+def test_contrast_conclusion_decides_when_both_sides_read_neutral() -> None:
+    """FinBERT on the real Tesla headline: every pass reads neutral-leaning-positive.
+
+    The concluding clause carries the author's verdict, so when the whole-text
+    fallback is ALSO uninformative (neutral), the conclusion must decide.
+    """
+    from stock_monitor.sentiment import score_with_contrast
+
+    headline = "Tesla: Potential Merger Has Some Upside, But I'm Still Bearish (Upgrade)"
+    score = score_with_contrast(_NeutralFallbackAnalyzer(), headline)
+    assert score <= 0.0
+
+
 def test_empty_news_is_neutral() -> None:
     report = analyze_ticker("AAA", FakeNewsProvider([]), VaderAnalyzer(), 7)
     assert report.count == 0

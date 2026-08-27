@@ -300,6 +300,11 @@ def _split_contrast(text: str) -> tuple[str, str] | None:
     return text[: match.start()].strip(), tail.strip()
 
 
+# Neutrality on a contrast clause usually means "weak signal", but FinBERT can also
+# return neutral when the tail tokens are ambiguous ("(Upgrade)" counters "Bearish").
+# If the *whole* headline also reads neutral, prefer the concluding clause anyway —
+# a single-pass model reading the full text is exactly what over-weights leading
+# positives, so trusting it here would reproduce the bug this function fixes.
 def score_with_contrast(analyzer: SentimentAnalyzer, text: str) -> float:
     """Score ``text`` with concluding-clause awareness.
 
@@ -314,9 +319,11 @@ def score_with_contrast(analyzer: SentimentAnalyzer, text: str) -> float:
     lead_src, conclude_src = parts
     lead = analyzer.score(lead_src)
     conclude = analyzer.score(conclude_src)
-    # If the concluding clause reads neutral (no strong signal), fall back to whole
-    # text — we don't want a bare trailing "yet" to void a clear headline.
-    if _label(conclude) == "neutral":
+    # Neutral concluding clause normally means "no real signal in the tail" (a bare
+    # trailing "yet"), so keep the whole-text score. But when the whole text is ALSO
+    # neutral, the whole-text pass is not informative either — the concluding clause
+    # still reflects the author's final stance, so let it decide.
+    if _label(conclude) == "neutral" and _label(analyzer.score(text)) != "neutral":
         return analyzer.score(text)
     w = _CONTRAST_POST_WEIGHT
     return round(w * conclude + (1 - w) * lead, 4)

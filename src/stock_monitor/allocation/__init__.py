@@ -12,6 +12,7 @@ from stock_monitor.allocation.contracts import (
     PositionAllocation,
     PositionInput,
 )
+from stock_monitor.allocation.engine import allocate
 
 __all__ = [
     "AllocationConstraints",
@@ -19,4 +20,5 @@ __all__ = [
     "PositionAllocation",
     "PositionInput",
     "PortfolioState",
+    "allocate",
 ]

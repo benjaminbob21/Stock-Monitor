@@ -310,7 +310,6 @@ def search_symbols(state: StateDep, q: str = "", limit: int = 15) -> dict[str, o
     }
 
 
-@app.get("/opportunities")
 def _merge_on_demand_scores(
     ranked: list[dict], recent: list[dict]
 ) -> tuple[list[dict], int]:
@@ -355,6 +354,7 @@ def _merge_on_demand_scores(
     return merged, len(extras)
 
 
+@app.get("/opportunities")
 def opportunities(state: StateDep, limit: int = 20) -> dict[str, object]:
     """Return the latest ranked "top-N to buy now" list from the most recent scan.
 

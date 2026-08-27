@@ -1967,3 +1967,67 @@ body.sheet-open {
     transition: none;
   }
 }
+
+/* ---- Joint portfolios (baskets) ---- */
+.basketform {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.baskethdr {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.baskettoggle {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+
+.basketlegs {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.basketlegs th {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.basketlegs td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.basketlegs td em {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.legticker {
+  font-weight: 800;
+}
+
+.basketclosebtn {
+  margin-left: 10px;
+}

@@ -142,6 +142,41 @@ export interface PositionsResponse {
   positions: PositionView[];
 }
 
+export interface BasketLeg {
+  id: string;
+  ticker: string;
+  pct: number;
+  budget: number;
+  shares: number;
+  entry_price: number;
+  status: "open" | "sold";
+  current_price?: number | null;
+  leg_return_pct?: number | null;
+  current_value?: number;
+  pnl?: number;
+  contribution_points?: number | null;
+}
+
+export interface BasketView {
+  id: string;
+  name: string;
+  created_at: string;
+  total_budget: number;
+  status: "open" | "closed";
+  closed_at?: string | null;
+  current_value?: number;
+  pnl?: number;
+  return_pct?: number | null;
+  benchmark_return_pct?: number | null;
+  excess_vs_spy_pct?: number | null;
+  complete?: boolean;
+  legs: BasketLeg[];
+}
+
+export interface BasketsResponse {
+  baskets: BasketView[];
+}
+
 export interface NewsItem {
   headline: string;
   url: string;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BottomNav, type Tab } from "@/components/BottomNav";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
+import { BasketCard } from "@/components/BasketCard";
 import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
@@ -12,6 +13,8 @@ import { parseBackendDate } from "@/lib/ui";
 import type {
   AnalystResponse,
   ApiError,
+  BasketsResponse,
+  BasketView,
   ExplainResponse,
   NewsResponse,
   OpportunitiesResponse,
@@ -74,6 +77,15 @@ export default function Home() {
   const [addBusy, setAddBusy] = useState(false);
   const [posNote, setPosNote] = useState<string | null>(null);
 
+  // Joint portfolios (baskets): one budget split across stocks by percentage.
+  const [baskets, setBaskets] = useState<BasketView[]>([]);
+  const [basketName, setBasketName] = useState("");
+  const [basketBudget, setBasketBudget] = useState("");
+  const [basketTickers, setBasketTickers] = useState("");
+  const [basketPcts, setBasketPcts] = useState("");
+  const [basketBusy, setBasketBusy] = useState(false);
+  const [basketNote, setBasketNoteMsg] = useState<string | null>(null);
+
   const [scorecard, setScorecard] = useState<Scorecard | null>(null);
 
   const loadOpportunities = useCallback(async () => {
@@ -113,6 +125,72 @@ export default function Home() {
       setPosNote("could not reach the scoring service");
     }
   }, []);
+
+  const loadBaskets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/baskets");
+      const body = (await res.json()) as BasketsResponse;
+      setBaskets(body.baskets ?? []);
+    } catch {
+      // baskets are non-critical; the tab still shows single positions
+    }
+  }, []);
+
+  const createBasket = useCallback(async () => {
+    const tickers = basketTickers
+      .split(",")
+      .map((t) => t.trim().toUpperCase())
+      .filter(Boolean)
+      .join(",");
+    const pcts = basketPcts
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join(",");
+    if (!basketBudget || !tickers || !pcts) {
+      setBasketNoteMsg("fill in budget, tickers and percentages");
+      return;
+    }
+    setBasketBusy(true);
+    try {
+      const params = new URLSearchParams({
+        ...(basketName.trim() ? { name: basketName.trim() } : {}),
+        budget: basketBudget.trim(),
+        tickers,
+        pcts,
+      });
+      const res = await fetch(`/api/baskets?${params}`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json()) as ApiError;
+        setBasketNoteMsg(body.detail ?? "could not create portfolio");
+        return;
+      }
+      setBasketNoteMsg(null);
+      setBasketName("");
+      setBasketBudget("");
+      setBasketTickers("");
+      setBasketPcts("");
+      await loadBaskets();
+    } catch {
+      setBasketNoteMsg("could not reach the scoring service");
+    } finally {
+      setBasketBusy(false);
+    }
+  }, [basketBudget, basketName, basketPcts, basketTickers, loadBaskets]);
+
+  const closeBasket = useCallback(
+    async (id: string) => {
+      try {
+        await fetch(`/api/baskets/${encodeURIComponent(id)}/close`, {
+          method: "POST",
+        });
+        await loadBaskets();
+      } catch {
+        // leave card as-is; user can retry
+      }
+    },
+    [loadBaskets],
+  );
 
   const loadScorecard = useCallback(async () => {
     try {
@@ -257,12 +335,14 @@ export default function Home() {
     loadOpportunities();
     loadRecommendations();
     loadPositions();
+    loadBaskets();
     loadScorecard();
     loadNewsStatus();
   }, [
     loadOpportunities,
     loadRecommendations,
     loadPositions,
+    loadBaskets,
     loadScorecard,
     loadNewsStatus,
   ]);
@@ -567,6 +647,69 @@ export default function Home() {
               Snapshots today&apos;s price + the model&apos;s call, then tracks
               it — a crisp signal and an expert view so you decide.
             </p>
+
+            <div className="opps-header">
+              <h2>Joint portfolios</h2>
+              <span className="opps-meta">one budget, split by %</span>
+            </div>
+            <form
+              className="searchbar basketform"
+              onSubmit={(e) => {
+                e.preventDefault();
+                createBasket();
+              }}
+            >
+              <input
+                value={basketName}
+                onChange={(e) => setBasketName(e.target.value)}
+                placeholder="Name (optional)"
+                aria-label="Portfolio name"
+              />
+              <input
+                value={basketBudget}
+                onChange={(e) => setBasketBudget(e.target.value)}
+                placeholder="Total budget $"
+                inputMode="decimal"
+                aria-label="Total budget"
+              />
+              <input
+                value={basketTickers}
+                onChange={(e) => setBasketTickers(e.target.value)}
+                placeholder="Tickers: NVDA, MSFT"
+                aria-label="Comma-separated tickers"
+              />
+              <input
+                value={basketPcts}
+                onChange={(e) => setBasketPcts(e.target.value)}
+                placeholder="% split: 40, 60"
+                inputMode="decimal"
+                aria-label="Comma-separated percentages"
+              />
+              <button
+                type="submit"
+                disabled={
+                  basketBusy ||
+                  !basketBudget.trim() ||
+                  !basketTickers.trim() ||
+                  !basketPcts.trim()
+                }
+              >
+                {basketBusy ? "Creating…" : "Create"}
+              </button>
+            </form>
+            <p className="hint">
+              Percentages must total ~100. Each stock gets fractional shares at
+              today&apos;s price; tap a portfolio to see how each stock moves
+              your whole capital.
+            </p>
+            {basketNote && <div className="status">{basketNote}</div>}
+            {baskets.length > 0 && (
+              <div className="reclist">
+                {baskets.map((b) => (
+                  <BasketCard key={b.id} basket={b} onClose={closeBasket} />
+                ))}
+              </div>
+            )}
 
             <div className="opps-header">
               <h2>Open positions</h2>

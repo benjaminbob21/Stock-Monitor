@@ -64,7 +64,8 @@ def test_contrast_aware_scoring_reads_trailing_verdict() -> None:
 
 
 class _NeutralFallbackAnalyzer(VaderAnalyzer):
-    """Mimics FinBERT: neutral on each clause AND on the whole text."""
+    """Mimics FinBERT: neutral top-label on each clause AND on the whole text,
+    with underlying positive/negative classes fighting (like the real headline)."""
 
     def score(self, text: str) -> float:
         if text in (
@@ -73,6 +74,9 @@ class _NeutralFallbackAnalyzer(VaderAnalyzer):
         ):
             return 0.0
         return 0.05
+
+    def torn_verdict(self, text: str) -> bool:
+        return text == "I'm Still Bearish (Upgrade)"
 
 
 def test_contrast_conclusion_decides_when_both_sides_read_neutral() -> None:
@@ -85,6 +89,10 @@ def test_contrast_conclusion_decides_when_both_sides_read_neutral() -> None:
 
     headline = "Tesla: Potential Merger Has Some Upside, But I'm Still Bearish (Upgrade)"
     score = score_with_contrast(_NeutralFallbackAnalyzer(), headline)
+    # Tail is torn (pos/neg classes fight under a neutral top label), so the
+    # concluding clause must decide — not the confident-positive whole-text pass.
+    # The fake tail scores exactly 0.0, and 0.75*0 + 0.25*(positive lead) clamps
+    # at >= 0 — the point is the tail now DECIDES, so assert not-positive.
     assert score <= 0.0
 
 

@@ -181,6 +181,10 @@ def _parse_yahoo(entry: dict) -> NewsItem | None:
     return NewsItem(headline=headline, url=url, source=source, published=published)
 
 
+# Neutrality on a contrast clause usually means "weak signal", but a single-pass
+# classifier can also emit neutral while its classes fight (see ``torn_verdict``).
+
+
 class SentimentAnalyzer(ABC):
     name: str
 
@@ -188,6 +192,14 @@ class SentimentAnalyzer(ABC):
     def score(self, text: str) -> float:
         """Return sentiment in [-1, 1]."""
         raise NotImplementedError
+
+    def torn_verdict(self, text: str) -> bool:
+        """True when the underlying classes disagree sharply (e.g. pos≈neg).
+
+        Only probability-aware backends can answer; the default is "not torn" so
+        scalar backends (VADER) keep the simple whole-text fallback behavior.
+        """
+        return False
 
     def score_batch(self, texts: list[str]) -> list[float]:
         """Score many texts at once. Default loops; backends may override for speed."""
@@ -223,18 +235,19 @@ class FinBertAnalyzer(SentimentAnalyzer):
             "text-classification", model="ProsusAI/finbert"
         )
 
+
+
     @staticmethod
-    def _to_score(item: dict) -> float:
-        label = str(item["label"]).lower()
-        confidence = float(item["score"])
-        if label == "positive":
-            return confidence
-        if label == "negative":
-            return -confidence
-        return 0.0
+    def _to_probs(result: list[dict]) -> dict[str, float]:
+        return {str(r["label"]).lower(): float(r["score"]) for r in result}
 
     def score(self, text: str) -> float:
-        return self._to_score(self._pipe(text[:512])[0])
+        probs = self._to_probs(self._pipe(text[:512]))
+        # Soft polarity: p(positive) - p(negative). Unlike a discrete argmax score,
+        # this grades *contested* headlines (top label neutral, pos≈neg underneath)
+        # as mildly signed instead of flattening them to 0.0 — which is what let
+        # "But I'm Still Bearish (Upgrade)" escape with a positive/neutral verdict.
+        return round(probs.get("positive", 0.0) - probs.get("negative", 0.0), 4)
 
     def score_batch(self, texts: list[str], *, batch_size: int = 64) -> list[float]:
         """Batched FinBERT inference — far faster than one call per headline on CPU."""
@@ -242,7 +255,14 @@ class FinBertAnalyzer(SentimentAnalyzer):
             return []
         trimmed = [t[:512] for t in texts]
         out = self._pipe(trimmed, batch_size=batch_size, truncation=True)
-        return [self._to_score(item) for item in out]
+        return [
+            round(
+                self._to_probs([item]).get("positive", 0.0)
+                - self._to_probs([item]).get("negative", 0.0),
+                4,
+            )
+            for item in out
+        ]
 
 
 def get_news_provider(settings: Settings) -> NewsProvider:
@@ -319,13 +339,19 @@ def score_with_contrast(analyzer: SentimentAnalyzer, text: str) -> float:
     lead_src, conclude_src = parts
     lead = analyzer.score(lead_src)
     conclude = analyzer.score(conclude_src)
-    # Neutral concluding clause normally means "no real signal in the tail" (a bare
-    # trailing "yet"), so keep the whole-text score. But when the whole text is ALSO
-    # neutral, the whole-text pass is not informative either — the concluding clause
-    # still reflects the author's final stance, so let it decide.
-    if _label(conclude) == "neutral" and _label(analyzer.score(text)) != "neutral":
-        return analyzer.score(text)
     w = _CONTRAST_POST_WEIGHT
+    # Neutral concluding clause usually means "no real signal in the tail" (a bare
+    # trailing "yet") and the whole-text score should stand. But a single-pass model
+    # can also report neutral when the tail's classes *fight* (FinBERT on the real
+    # Tesla headline: tail pos .09 / neg .43 / neu .49 → top-label neutral) while it
+    # still hands a confident-positive whole-text score by over-weighting the leading
+    # clause — exactly the bug this function exists to fix. When the tail is torn
+    # between positive and negative under the hood, trust the concluding clause.
+    if _label(conclude) == "neutral":
+        torn = getattr(analyzer, "torn_verdict", None)
+        if callable(torn) and torn(conclude_src):
+            return round(w * conclude + (1 - w) * lead, 4)
+        return analyzer.score(text)
     return round(w * conclude + (1 - w) * lead, 4)
 
 

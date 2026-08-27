@@ -15,6 +15,8 @@ whether selling was the right call (price-then vs price-now).
 from __future__ import annotations
 
 import datetime as dt
+import threading
+import time
 import uuid
 
 from stock_monitor.models.scorer import Scoreable
@@ -113,6 +115,7 @@ def open_position(
     earnings_provider: object | None = None,
 ) -> dict:
     """Snapshot today's price + score for ``ticker`` and start tracking it."""
+    _invalidate_view_cache()
     scored = _score_now(
         ticker,
         model,
@@ -243,8 +246,37 @@ def list_position_views(
     short_model: Scoreable | None = None,
     earnings_provider: object | None = None,
 ) -> list[dict]:
-    """Return every tracked position with a fresh live status."""
+    """Return every tracked position with a fresh live status.
+
+    Each full view costs a model score + EDGAR companyfacts fetch + news
+    sentiment pass per position, which is far too heavy to redo on every
+    home-screen refresh (and brutal while the nightly news collect hogs
+    CPU). Views are therefore memoized briefly; the TTL trade-off means
+    prices/convictions may lag by up to five minutes, which is fine for a
+    status card. Sold positions and errors are never cached (they can be
+    corrected client-side or transient).
+    """
+    cache_key = (
+        model_version,
+        negative_threshold,
+        news_lookback_days,
+        id(model),
+        id(short_model) if short_model is not None else None,
+    )
+    now = time.monotonic()
+    with _view_cache_lock:
+        cached_at = _view_cache.get("ts")
+        cached_views = _view_cache.get("views")
+        if (
+            isinstance(cached_at, float)
+            and isinstance(cached_views, list)
+            and now - cached_at < _VIEW_CACHE_TTL_SECONDS
+            and _view_cache.get("key") == cache_key
+        ):
+            return cached_views
+
     views: list[dict] = []
+    sellable = True
     for position in storage.list_positions():
         try:
             views.append(
@@ -265,7 +297,25 @@ def list_position_views(
             )
         except Exception:  # noqa: BLE001 — a data hiccup shouldn't hide the whole list
             views.append({**position, "signal": "unavailable", "expert_view": ""})
+            sellable = False
+
+    with _view_cache_lock:
+        if sellable:
+            _view_cache["views"] = [dict(v) for v in views]
+            _view_cache["ts"] = time.monotonic()
+            _view_cache["key"] = cache_key
     return views
+
+
+_VIEW_CACHE_TTL_SECONDS = 300.0
+_view_cache: dict[str, object] = {}
+_view_cache_lock = threading.Lock()
+
+
+def _invalidate_view_cache() -> None:
+    """Drop memoized views (e.g. after selling or adding a position)."""
+    with _view_cache_lock:
+        _view_cache.clear()
 
 
 def sell_position(
@@ -283,6 +333,7 @@ def sell_position(
     position = storage.get_position(position_id)
     if position is None:
         return None
+    _invalidate_view_cache()
     scored = _score_now(
         position["ticker"],
         model,

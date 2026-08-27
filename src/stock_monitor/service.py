@@ -40,6 +40,17 @@ _CALIBRATED_NOTE = (
 
 # Risk-flag thresholds (Phase 1, deliberately simple).
 _HIGH_VOL = 0.60
+# Leverage: liabilities > 60% of assets is a stretched balance sheet for most
+# non-financials; > 80% is severe.
+_HIGH_DEBT = 0.60
+_SEVERE_DEBT = 0.80
+# Valuation distortion: a deeply negative earnings yield means the market price rests
+# on future recovery, not current earnings; paired with momentum it's a classic
+# story-stock profile.
+_NEG_EARNINGS_YIELD = -0.03
+# Momentum overextension / breakdown via RSI-14 bands.
+_RSI_OVERBOUGHT = 75.0
+_RSI_OVERSOLD = 25.0
 
 # Hard caps: a red flag ceilings the score no matter how bullish the model is
 # (build-plan §7 Phase 3). Better to under-rank a landmine than chase it.
@@ -65,7 +76,13 @@ class DataQuarantined(Exception):
 
 
 def risk_flags(row: dict[str, object]) -> list[str]:
-    """Derive lightweight risk flags from a feature row (build-plan: score + flags)."""
+    """Derive lightweight risk flags from a feature row (build-plan: score + flags).
+
+    Deliberately heuristic and readable: each flag is a plain-language warning that
+    the model's conviction alone doesn't capture. A clean mega-cap legitimately
+    produces no flags; a leveraged, money-losing, overextended name should surface
+    several.
+    """
     flags: list[str] = []
 
     if row.get("fundamentals_known_on") is None:
@@ -78,6 +95,38 @@ def risk_flags(row: dict[str, object]) -> list[str]:
     margin = _as_float(row.get("profit_margin"))
     if margin == margin and margin < 0:
         flags.append("negative_earnings")
+
+    # Leverage stretch: liabilities as a share of assets. Only meaningful when we
+    # actually have fundamentals (NaN ratio must not fire).
+    debt = _as_float(row.get("debt_ratio"))
+    if debt == debt:  # not-NaN
+        if debt > _SEVERE_DEBT:
+            flags.append("severe_leverage")
+        elif debt > _HIGH_DEBT:
+            flags.append("high_leverage")
+
+    # Valuation distortion: negative earnings yield (paying for hope) combined with
+    # strong trailing momentum is the classic expensive-story profile.
+    ey = _as_float(row.get("earnings_yield"))
+    mom = _as_float(row.get("mom_12_1"))
+    if ey == ey and ey < _NEG_EARNINGS_YIELD:
+        flags.append("expensive_on_earnings")
+        if mom == mom and mom > 0.30:
+            flags.append("momentum_valuation_stretch")
+
+    # Technical extremes: RSI-14 in overbought/oversold territory warns the move may
+    # be exhausted in either direction.
+    rsi = _as_float(row.get("rsi_14"))
+    if rsi == rsi:
+        if rsi > _RSI_OVERBOUGHT:
+            flags.append("overbought_rsi")
+        elif rsi < _RSI_OVERSOLD:
+            flags.append("oversold_rsi")
+
+    # Below long-term trend: price under its 200-day SMA.
+    trend = _as_float(row.get("trend_200"))
+    if trend == trend and trend < 0:
+        flags.append("below_trend_200")
 
     return flags
 

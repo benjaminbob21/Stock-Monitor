@@ -1969,6 +1969,255 @@ body.sheet-open {
 }
 
 /* ---- Joint portfolios (baskets) ---- */
+.newbasketbtn {
+  min-height: 36px;
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--green) 45%, var(--border));
+  color: var(--green);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.newbasketbtn:hover {
+  background: color-mix(in srgb, var(--green) 24%, transparent);
+}
+
+.basketbuilder {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 60;
+  margin: 0 auto;
+  max-width: 640px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 18px 18px 28px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 700px) {
+  .basketbuilder {
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius);
+    max-width: 480px;
+  }
+}
+
+.bbhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bbhead h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.bbin {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.bbin:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.bbnext {
+  min-height: 44px;
+  background: var(--green);
+  color: #04150d;
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+}
+
+.bbnext:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bbmeter-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.bbmeter {
+  height: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bbmeter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--accent));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.bblegs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bbleg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+}
+
+.bbleg-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.bbleg-id strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.bbleg-id .poslabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.bbleg-pct {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bbleg-pct input {
+  width: 58px;
+  text-align: right;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bbleg-pct input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.bbremove {
+  margin-left: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+.bbresults {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.bbresults button {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  background: var(--panel-2);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bbresults button:last-child {
+  border-bottom: none;
+}
+
+.bbresults button:hover {
+  background: var(--panel);
+}
+
+.bbresults button strong {
+  font-weight: 800;
+  min-width: 52px;
+}
+
+.bbresults button span {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bbactions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bbequate {
+  border-color: var(--green);
+  color: var(--green);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.bbequate-hint {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 .basketform {
   flex-direction: column;
   align-items: stretch;

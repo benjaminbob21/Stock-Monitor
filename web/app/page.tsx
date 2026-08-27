@@ -5,6 +5,7 @@ import { BottomNav, type Tab } from "@/components/BottomNav";
 import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
 import { BasketCard } from "@/components/BasketCard";
+import { BasketBuilder } from "@/components/BasketBuilder";
 import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
@@ -73,18 +74,14 @@ export default function Home() {
   const [recNote, setRecNote] = useState<string | null>(null);
 
   const [positions, setPositions] = useState<PositionView[]>([]);
-  const [addTicker, setAddTicker] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [posNote, setPosNote] = useState<string | null>(null);
 
   // Joint portfolios (baskets): one budget split across stocks by percentage.
   const [baskets, setBaskets] = useState<BasketView[]>([]);
-  const [basketName, setBasketName] = useState("");
-  const [basketBudget, setBasketBudget] = useState("");
-  const [basketTickers, setBasketTickers] = useState("");
-  const [basketPcts, setBasketPcts] = useState("");
   const [basketBusy, setBasketBusy] = useState(false);
   const [basketNote, setBasketNoteMsg] = useState<string | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   const [scorecard, setScorecard] = useState<Scorecard | null>(null);
 
@@ -136,47 +133,39 @@ export default function Home() {
     }
   }, []);
 
-  const createBasket = useCallback(async () => {
-    const tickers = basketTickers
-      .split(",")
-      .map((t) => t.trim().toUpperCase())
-      .filter(Boolean)
-      .join(",");
-    const pcts = basketPcts
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .join(",");
-    if (!basketBudget || !tickers || !pcts) {
-      setBasketNoteMsg("fill in budget, tickers and percentages");
-      return;
-    }
-    setBasketBusy(true);
-    try {
-      const params = new URLSearchParams({
-        ...(basketName.trim() ? { name: basketName.trim() } : {}),
-        budget: basketBudget.trim(),
-        tickers,
-        pcts,
-      });
-      const res = await fetch(`/api/baskets?${params}`, { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json()) as ApiError;
-        setBasketNoteMsg(body.detail ?? "could not create portfolio");
-        return;
+  const createBasket = useCallback(
+    async (
+      name: string,
+      budget: number,
+      tickers: string[],
+      pcts: number[],
+    ): Promise<boolean> => {
+      setBasketBusy(true);
+      try {
+        const params = new URLSearchParams({
+          ...(name ? { name } : {}),
+          budget: String(budget),
+          tickers: tickers.join(","),
+          pcts: pcts.join(","),
+        });
+        const res = await fetch(`/api/baskets?${params}`, { method: "POST" });
+        if (!res.ok) {
+          const body = (await res.json()) as ApiError;
+          setBasketNoteMsg(body.detail ?? "could not create portfolio");
+          return false;
+        }
+        setBasketNoteMsg(null);
+        await loadBaskets();
+        return true;
+      } catch {
+        setBasketNoteMsg("could not reach the scoring service");
+        return false;
+      } finally {
+        setBasketBusy(false);
       }
-      setBasketNoteMsg(null);
-      setBasketName("");
-      setBasketBudget("");
-      setBasketTickers("");
-      setBasketPcts("");
-      await loadBaskets();
-    } catch {
-      setBasketNoteMsg("could not reach the scoring service");
-    } finally {
-      setBasketBusy(false);
-    }
-  }, [basketBudget, basketName, basketPcts, basketTickers, loadBaskets]);
+    },
+    [loadBaskets],
+  );
 
   const closeBasket = useCallback(
     async (id: string) => {
@@ -484,11 +473,6 @@ export default function Home() {
     [loadPositions],
   );
 
-  const addPosition = useCallback(async () => {
-    const ok = await addPositionByTicker(addTicker);
-    if (ok) setAddTicker("");
-  }, [addTicker, addPositionByTicker]);
-
   const sellPosition = useCallback(
     async (id: string) => {
       try {
@@ -506,6 +490,16 @@ export default function Home() {
   return (
     <div className="app-shell">
       <ServiceWorkerRegister />
+      <BasketBuilder
+        open={builderOpen}
+        onClose={() => setBuilderOpen(false)}
+        onCreate={async (name, budget, tickers, pcts) => {
+          const ok = await createBasket(name, budget, tickers, pcts);
+          if (ok) setBuilderOpen(false);
+        }}
+        busy={basketBusy}
+      />
+
 
       <header className="topbar">
         <div className="topbar-brand">
@@ -626,81 +620,20 @@ export default function Home() {
 
         {tab === "tracked" && (
           <>
-            <form
-              className="searchbar"
-              onSubmit={(e) => {
-                e.preventDefault();
-                addPosition();
-              }}
-            >
-              <input
-                value={addTicker}
-                onChange={(e) => setAddTicker(e.target.value)}
-                placeholder="Add a stock you bought (e.g. NVDA)"
-                aria-label="Ticker to track"
-              />
-              <button type="submit" disabled={addBusy || !addTicker.trim()}>
-                {addBusy ? "Adding…" : "Add"}
-              </button>
-            </form>
-            <p className="hint">
-              Snapshots today&apos;s price + the model&apos;s call, then tracks
-              it — a crisp signal and an expert view so you decide.
-            </p>
-
             <div className="opps-header">
               <h2>Joint portfolios</h2>
-              <span className="opps-meta">one budget, split by %</span>
-            </div>
-            <form
-              className="searchbar basketform"
-              onSubmit={(e) => {
-                e.preventDefault();
-                createBasket();
-              }}
-            >
-              <input
-                value={basketName}
-                onChange={(e) => setBasketName(e.target.value)}
-                placeholder="Name (optional)"
-                aria-label="Portfolio name"
-              />
-              <input
-                value={basketBudget}
-                onChange={(e) => setBasketBudget(e.target.value)}
-                placeholder="Total budget $"
-                inputMode="decimal"
-                aria-label="Total budget"
-              />
-              <input
-                value={basketTickers}
-                onChange={(e) => setBasketTickers(e.target.value)}
-                placeholder="Tickers: NVDA, MSFT"
-                aria-label="Comma-separated tickers"
-              />
-              <input
-                value={basketPcts}
-                onChange={(e) => setBasketPcts(e.target.value)}
-                placeholder="% split: 40, 60"
-                inputMode="decimal"
-                aria-label="Comma-separated percentages"
-              />
               <button
-                type="submit"
-                disabled={
-                  basketBusy ||
-                  !basketBudget.trim() ||
-                  !basketTickers.trim() ||
-                  !basketPcts.trim()
-                }
+                className="newbasketbtn"
+                onClick={() => setBuilderOpen(true)}
               >
-                {basketBusy ? "Creating…" : "Create"}
+                ＋ New portfolio
               </button>
-            </form>
+            </div>
             <p className="hint">
-              Percentages must total ~100. Each stock gets fractional shares at
-              today&apos;s price; tap a portfolio to see how each stock moves
-              your whole capital.
+              One budget, split across stocks by percentage. Tap a portfolio to
+              see how each stock moves your whole capital. To track a single
+              stock you bought, search it in the Search tab and tap{" "}
+              <strong>Track</strong> on its page.
             </p>
             {basketNote && <div className="status">{basketNote}</div>}
             {baskets.length > 0 && (

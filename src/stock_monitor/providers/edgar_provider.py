@@ -59,6 +59,13 @@ _DCF_EXTRA_CONCEPTS: tuple[str, ...] = (
     "ShortTermBorrowings",
 )
 
+# SEC's ticker map occasionally re-points a ticker at a freshly created CIK
+# (e.g. XOM -> CIK 2115436 after a 2026 reorganization) whose companyfacts
+# holds only the filings since the change. The full filing history stays on
+# the predecessor CIK, so when the mapped CIK looks too thin we merge in the
+# legacy CIK's facts. PIT consumers then pick facts by known_on as usual.
+_LEGACY_CIKS: dict[str, int] = {"XOM": 34088}
+
 
 def dcf_concepts() -> tuple[str, ...]:
     """All us-gaap concepts the DCF engine reads (defaults + cash-flow extras)."""
@@ -173,5 +180,24 @@ class EdgarProvider(FundamentalProvider):
                 dei_payload is None or _freshest_filed(diluted) > _freshest_filed(dei_payload)
             ):
                 _emit("CommonStockSharesOutstanding", diluted)
+
+        # A reorganized issuer's fresh CIK only carries post-reorganization
+        # filings; merge the predecessor CIK's history so TTM/DCF consumers
+        # still see the long annual record (facts dedupe by known_on+end+value).
+        legacy_cik = _LEGACY_CIKS.get(ticker.upper())
+        if legacy_cik is not None and legacy_cik != cik:
+            legacy_resp = self._get(_COMPANYFACTS_URL.format(cik=legacy_cik))
+            if legacy_resp.status_code == 200:
+                legacy_resp.raise_for_status()
+                legacy_gaap = legacy_resp.json().get("facts", {}).get("us-gaap", {})
+                for concept, payload in legacy_gaap.items():
+                    if concept in wanted:
+                        _emit(concept, payload)
+                if "CommonStockSharesOutstanding" in wanted:
+                    legacy_dei = (
+                        legacy_resp.json().get("facts", {}).get("dei", {}).get(_DEI_SHARES_CONCEPT)
+                    )
+                    if legacy_dei is not None:
+                        _emit("CommonStockSharesOutstanding", legacy_dei)
 
         return facts

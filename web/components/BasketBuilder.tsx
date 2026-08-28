@@ -45,6 +45,8 @@ export function BasketBuilder({
   const [pctDraft, setPctDraft] = useState<string | null>(null);
   const [pctLeg, setPctLeg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestNote, setSuggestNote] = useState<string | null>(null);
   const queryRef = useRef("");
 
   useEffect(() => {
@@ -116,6 +118,49 @@ export function BasketBuilder({
     const last = legs[legs.length - 1].ticker;
     setLegs(legs.map((l) => (l.ticker === last ? { ...l, pct: l.pct + (100 - totalPct) } : l)));
     setError(null);
+  };
+
+  // Ask the backend's allocation engine how it would split this budget across
+  // the picked tickers (conviction ÷ volatility, capped). Percentages land in
+  // the editable legs — the user still confirms the final split.
+  const suggestSplit = async () => {
+    if (legs.length === 0) return;
+    setSuggesting(true);
+    setSuggestNote(null);
+    try {
+      const params = new URLSearchParams({
+        tickers: legs.map((l) => l.ticker).join(","),
+      });
+      if (Number(budget) > 0) params.set("budget", budget);
+      const res = await fetch(`/api/allocation?${params}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail ?? "suggestion failed");
+      const byTicker = new Map<string, number>(
+        (body.allocations ?? []).map((a: { ticker: string; target_pct: number }) => [
+          a.ticker,
+          a.target_pct as number,
+        ]),
+      );
+      let cash = body.cash_pct ?? 0;
+      if (cash > 0) {
+        // Fold the engine's cash floor into the largest leg so the UI still
+        // totals exactly 100% (baskets have no cash leg).
+        const biggest = legs.reduce((a, b) => (a.pct >= b.pct ? a : b));
+        byTicker.set(biggest.ticker, (byTicker.get(biggest.ticker) ?? 0) + cash);
+        cash = 0;
+      }
+      setLegs(legs.map((l) => ({ ...l, pct: Math.round((byTicker.get(l.ticker) ?? 0) * 10) / 10 })));
+      const unscored: string[] = body.diagnostics?.unscored ?? [];
+      setSuggestNote(
+        unscored.length > 0
+          ? `Engine split applied — no model score for ${unscored.join(", ")}, treated neutrally.`
+          : "Engine split applied — tweak any % if you disagree.",
+      );
+    } catch (e) {
+      setSuggestNote(e instanceof Error ? e.message : "could not reach the scoring service");
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const submit = () => {
@@ -282,7 +327,20 @@ export function BasketBuilder({
               </p>
             )}
 
+            {suggestNote && <p className="hint">{suggestNote}</p>}
+
             <div className="bbactions">
+              {/* Suggest split: engine-weighted, ≥2 legs, any allocation state. */}
+              {legs.length >= 2 && (
+                <button
+                  className="sellbtn bbsuggest"
+                  onClick={suggestSplit}
+                  disabled={suggesting}
+                  type="button"
+                >
+                  {suggesting ? "Thinking…" : "🎯 Suggest split"}
+                </button>
+              )}
               {/* Locked until the split is exactly 100%. */}
               <button
                 className="bbnext"

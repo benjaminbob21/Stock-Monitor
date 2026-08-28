@@ -1011,6 +1011,40 @@ def sell(position_id: str, state: StateDep) -> dict[str, object]:
     return view
 
 
+@app.get("/allocation")
+def allocation_endpoint(
+    state: StateDep,
+    budget: float | None = None,
+    tickers: str | None = None,
+) -> dict[str, object]:
+    """Deterministic capital-allocation plan (target weights + reasons).
+
+    ``budget`` (optional, $) is the hypothetical capital to allocate; defaults to
+    the current open book value. ``tickers`` (optional, comma-separated) restricts
+    the plan to those names — the basket-builder "suggest split" flow; names we
+    have no recent score for get a neutral placeholder and are listed under
+    ``diagnostics.unscored``. Weights come from the auditable engine — never an
+    LLM.
+    """
+    from stock_monitor.allocation.service import build_allocation_plan, plan_to_json
+
+    _require_ready(state)
+    if budget is not None and budget <= 0:
+        raise HTTPException(status_code=422, detail="budget must be positive")
+    restrict = [t for t in (tickers or "").split(",") if t.strip()]
+    try:
+        with Storage(state.db_path) as store:  # type: ignore[arg-type]
+            plan, diagnostics = build_allocation_plan(
+                store,
+                state.price_provider,
+                total_value=budget,
+                restrict_tickers=restrict or None,
+            )
+    except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+        raise HTTPException(status_code=500, detail=f"allocation failed: {exc}") from exc
+    return plan_to_json(plan, diagnostics)
+
+
 @app.get("/baskets")
 def list_baskets_endpoint(state: StateDep) -> dict[str, object]:
     """All joint portfolios, valued as a whole (headline P&L + contributions)."""

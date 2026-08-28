@@ -2280,3 +2280,43 @@ body.sheet-open {
 .basketclosebtn {
   margin-left: 10px;
 }
+
+/* ---- Allocation panel (Portfolio tab) ---- */
+.allocpanel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card, var(--bg));
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.allochead {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.allocbody {
+  padding: 0 14px 12px;
+}
+
+.allocrow {
+  border-bottom: 1px solid var(--border);
+}
+
+.allocpcts {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.bbsuggest {
+  margin-bottom: 8px;
+}

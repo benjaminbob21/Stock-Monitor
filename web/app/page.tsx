@@ -6,6 +6,7 @@ import { OpportunitiesList } from "@/components/OpportunitiesList";
 import { PositionCard } from "@/components/PositionCard";
 import { BasketCard } from "@/components/BasketCard";
 import { BasketBuilder } from "@/components/BasketBuilder";
+import { AllocationPanel } from "@/components/AllocationPanel";
 import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
@@ -643,6 +644,8 @@ export default function Home() {
                 ))}
               </div>
             )}
+
+            <AllocationPanel budgetHint={baskets.reduce((s, b) => s + (b.total_budget ?? 0), 0)} />
 
             <div className="opps-header">
               <h2>Open positions</h2>

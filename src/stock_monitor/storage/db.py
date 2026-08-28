@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from pathlib import Path
 from types import TracebackType
 
@@ -20,6 +21,8 @@ import duckdb
 import pandas as pd
 
 from stock_monitor.features.builder import FEATURE_COLUMNS
+
+logger = logging.getLogger(__name__)
 
 _FEATURE_INSERT_COLUMNS = (
     "ticker",
@@ -177,10 +180,9 @@ CREATE TABLE IF NOT EXISTS news_articles (
 
 -- Alternative-sentiment layer (Reddit + financial-media RSS; LLM-reader design,
 -- approved 2026-08-28). ``alt_posts`` is the raw audit archive; ``alt_sentiment``
--- holds the LLM's per-ticker verdicts. The DROP guards against the older
--- FinBERT-era schema (different PK shape); batches are cheap to re-run.
-DROP TABLE IF EXISTS alt_posts;
-DROP TABLE IF EXISTS alt_sentiment;
+-- holds the LLM's per-ticker verdicts. The legacy FinBERT-era shapes (different
+-- PK / missing columns) are detected and migrated in Python — see
+-- _migrate_alt_tables; never DROP these here, the verdicts are precious.
 CREATE TABLE IF NOT EXISTS alt_posts (
     published TIMESTAMP,
     headline VARCHAR NOT NULL,
@@ -246,6 +248,7 @@ class Storage:
         self._con = duckdb.connect(db_path)
         self._con.execute(_SCHEMA)
         self._migrate_feature_columns()
+        self._migrate_alt_tables()
 
     def _migrate_feature_columns(self) -> None:
         """Forward-migrate the features table as FEATURE_COLUMNS grows across phases.
@@ -256,6 +259,65 @@ class Storage:
         """
         for column in FEATURE_COLUMNS:
             self._con.execute(f"ALTER TABLE features ADD COLUMN IF NOT EXISTS {column} DOUBLE")
+
+    def _migrate_alt_tables(self) -> None:
+        """Migrate the legacy FinBERT-era alt_* shapes to the LLM-reader schema.
+
+        The legacy ``alt_posts`` PK included ``ticker`` and ``alt_sentiment`` had a
+        ``post_count`` column; inserts against the new shapes fail with a binder
+        error on such DBs. Migrate in place only when the old shape is detected —
+        the tables must NOT be dropped unconditionally on every open, or each
+        service restart would wipe freshly collected batches.
+        """
+        cols = {
+            t: {
+                r[0]
+                for r in self._con.execute(
+                    "SELECT column_name FROM duckdb_columns() WHERE table_name = ?",
+                    [t],
+                ).fetchall()
+            }
+            for t in ("alt_posts", "alt_sentiment")
+        }
+        if not all(cols.values()):  # tables not created yet — nothing to migrate
+            return
+        posts_pk: set[str] = set()
+        for (names,) in self._con.execute(
+            "SELECT constraint_column_names FROM duckdb_constraints() "
+            "WHERE table_name = 'alt_posts' AND constraint_type = 'PRIMARY KEY'"
+        ).fetchall():
+            posts_pk.update(names)
+        if posts_pk and "ticker" in posts_pk:
+            logger.warning("migrating legacy alt_posts schema (ticker-keyed PK)")
+            # DuckDB cannot drop PK constraints, so rebuild the table and copy rows.
+            self._con.execute(
+                """
+                CREATE TABLE alt_posts_migrated (
+                    published TIMESTAMP,
+                    headline VARCHAR NOT NULL,
+                    source VARCHAR,
+                    url VARCHAR,
+                    engagement INTEGER DEFAULT 0,
+                    ingested_at TIMESTAMP DEFAULT now(),
+                    PRIMARY KEY (url, headline)
+                )
+                """
+            )
+            self._con.execute(
+                """
+                INSERT OR IGNORE INTO alt_posts_migrated (published, headline, source, url,
+                                                           engagement, ingested_at)
+                SELECT published, headline, source, url, engagement, ingested_at
+                FROM alt_posts
+                """
+            )
+            self._con.execute("DROP TABLE alt_posts")
+            self._con.execute("ALTER TABLE alt_posts_migrated RENAME TO alt_posts")
+        if "post_count" in cols["alt_sentiment"]:
+            logger.warning("migrating legacy alt_sentiment schema (post_count column)")
+            self._con.execute("ALTER TABLE alt_sentiment DROP COLUMN post_count;")
+            self._con.execute("ALTER TABLE alt_sentiment ADD COLUMN buzz INTEGER;")
+            self._con.execute("ALTER TABLE alt_sentiment ADD COLUMN summary VARCHAR;")
 
     def __enter__(self) -> Storage:
         return self
@@ -355,6 +417,8 @@ class Storage:
             "paper_picks",
             "news_sentiment",
             "news_articles",
+            "alt_posts",
+            "alt_sentiment",
             "backtest_results",
             "macro_series",
         }:

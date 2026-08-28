@@ -55,8 +55,10 @@ YearSeries = list[tuple[int, float]]
 
 
 def dcf_concepts() -> tuple[str, ...]:
-    """Concepts the DCF engine needs (EDGAR companyfacts already carries them)."""
-    return _CONCEPTS
+    """All concepts the DCF engine reads (mirrors edgar_provider.dcf_concepts)."""
+    from stock_monitor.providers.edgar_provider import dcf_concepts as _edgar_dcf_concepts
+
+    return _edgar_dcf_concepts()
 
 
 def _annual_series(

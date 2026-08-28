@@ -42,15 +42,18 @@ DEFAULT_CONCEPTS: tuple[str, ...] = (
 # to the us-gaap concept name so the feature builder can look it up uniformly.
 _DEI_SHARES_CONCEPT = "EntityCommonStockSharesOutstanding"
 
+# Cash/valuation concepts the DCF engine needs beyond DEFAULT_CONCEPTS.
+_DCF_EXTRA_CONCEPTS: tuple[str, ...] = (
+    "CashAndCashEquivalentsAtCarryingValue",
+    "LongTermDebtNoncurrent",
+    "LongTermDebtCurrent",
+    "ShortTermBorrowings",
+)
+
 
 def dcf_concepts() -> tuple[str, ...]:
-    """Extra us-gaap concepts the DCF engine reads (beyond DEFAULT_CONCEPTS)."""
-    return (
-        "CashAndCashEquivalentsAtCarryingValue",
-        "LongTermDebtNoncurrent",
-        "LongTermDebtCurrent",
-        "ShortTermBorrowings",
-    )
+    """All us-gaap concepts the DCF engine reads (defaults + cash-flow extras)."""
+    return tuple(dict.fromkeys([*DEFAULT_CONCEPTS, *_DCF_EXTRA_CONCEPTS]))
 
 
 class EdgarProvider(FundamentalProvider):

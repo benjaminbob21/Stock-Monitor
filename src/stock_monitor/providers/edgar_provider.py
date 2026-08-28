@@ -45,6 +45,12 @@ DEFAULT_CONCEPTS: tuple[str, ...] = (
 # to the us-gaap concept name so the feature builder can look it up uniformly.
 _DEI_SHARES_CONCEPT = "EntityCommonStockSharesOutstanding"
 
+# Some issuers stopped populating dei shares years ago (Mastercard last filed it
+# for FY2010). Their cover-page share counts only exist as us-gaap weighted
+# averages; diluted is the conservative per-share denominator, so it is emitted
+# as a fallback alias of CommonStockSharesOutstanding.
+_DILUTED_SHARES_CONCEPT = "WeightedAverageNumberOfDilutedSharesOutstanding"
+
 # Cash/valuation concepts the DCF engine needs beyond DEFAULT_CONCEPTS.
 _DCF_EXTRA_CONCEPTS: tuple[str, ...] = (
     "CashAndCashEquivalentsAtCarryingValue",
@@ -57,6 +63,18 @@ _DCF_EXTRA_CONCEPTS: tuple[str, ...] = (
 def dcf_concepts() -> tuple[str, ...]:
     """All us-gaap concepts the DCF engine reads (defaults + cash-flow extras)."""
     return tuple(dict.fromkeys([*DEFAULT_CONCEPTS, *_DCF_EXTRA_CONCEPTS]))
+
+
+def _freshest_filed(payload: dict) -> str:
+    """Latest ``filed`` date across a companyfacts concept payload (ISO strings)."""
+    return max(
+        (
+            entry.get("filed", "")
+            for entries in payload.get("units", {}).values()
+            for entry in entries
+        ),
+        default="",
+    )
 
 
 class EdgarProvider(FundamentalProvider):
@@ -141,9 +159,19 @@ class EdgarProvider(FundamentalProvider):
                 _emit(concept, payload)
 
         # Shares outstanding is often only in the dei taxonomy; normalise its name.
+        # dei cover-page counts stopped being filed by some issuers (Mastercard's
+        # last one is FY2010), so whenever the freshest dei fact is older than the
+        # freshest us-gaap diluted weighted average, emit that too — downstream
+        # PIT-aware consumers pick whichever fact is freshest as of their date.
         if "CommonStockSharesOutstanding" in wanted:
             dei = all_facts.get("dei", {})
-            if _DEI_SHARES_CONCEPT in dei:
-                _emit("CommonStockSharesOutstanding", dei[_DEI_SHARES_CONCEPT])
+            dei_payload = dei.get(_DEI_SHARES_CONCEPT)
+            if dei_payload is not None:
+                _emit("CommonStockSharesOutstanding", dei_payload)
+            diluted = us_gaap.get(_DILUTED_SHARES_CONCEPT)
+            if diluted is not None and (
+                dei_payload is None or _freshest_filed(diluted) > _freshest_filed(dei_payload)
+            ):
+                _emit("CommonStockSharesOutstanding", diluted)
 
         return facts

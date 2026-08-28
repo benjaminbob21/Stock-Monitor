@@ -61,9 +61,7 @@ def dcf_concepts() -> tuple[str, ...]:
     return _edgar_dcf_concepts()
 
 
-def _annual_series(
-    facts: Sequence[FundamentalFact], concept: str, as_of: dt.date
-) -> YearSeries:
+def _annual_series(facts: Sequence[FundamentalFact], concept: str, as_of: dt.date) -> YearSeries:
     """Latest-known annual value per fiscal year for ``concept``, oldest first.
 
     PIT-safe: only facts with ``known_on <= as_of`` qualify. Annual facts are
@@ -115,9 +113,7 @@ def _slope_growth(series: YearSeries) -> float | None:
     denom = sum((x - mean_x) ** 2 for x in xs)
     if denom == 0:
         return None
-    slope = sum(
-        (x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)
-    ) / denom
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)) / denom
     if mean_y == 0 or not math.isfinite(slope):
         return None
     return slope / abs(mean_y)
@@ -147,9 +143,7 @@ def compute_dcf(
     if not ocf_series:
         return _none_result(["no operating cash flow history in SEC filings"])
 
-    capex_by_year = dict(
-        _annual_series(facts, "PaymentsToAcquirePropertyPlantAndEquipment", as_of)
-    )
+    capex_by_year = dict(_annual_series(facts, "PaymentsToAcquirePropertyPlantAndEquipment", as_of))
     fcf_series: YearSeries = []
     for year, ocf in ocf_series:
         capex = capex_by_year.get(year)
@@ -187,8 +181,7 @@ def compute_dcf(
 
     if fcf_negative and growth_v <= 0:
         reasons.append(
-            "latest FCF is negative and no positive growth anchor — "
-            "a DCF here would be fiction"
+            "latest FCF is negative and no positive growth anchor — a DCF here would be fiction"
         )
         return _none_result(reasons, base_fcf=base_fcf)
 
@@ -227,8 +220,16 @@ def compute_dcf(
     net_debt: float | None = None
     bridge: str
     if equity_fact is not None and liabilities_fact is not None:
-        net_debt = liabilities_fact.value - cash
-        bridge = "liabilities − cash"
+        # For non-financials, total liabilities minus cash is a fair net-debt
+        # stand-in. For financials (banks/insurers — customer deposits, policy
+        # liabilities, no capex), it can exceed the entire enterprise value and
+        # must not be subtracted; fall back to filed borrowings only.
+        if capex_missing and debt_by_year:
+            net_debt = debt_by_year[max(debt_by_year)] - cash
+            bridge = "filed debt − cash (financial: liabilities not netted)"
+        else:
+            net_debt = liabilities_fact.value - cash
+            bridge = "liabilities − cash"
     elif debt_by_year:
         net_debt = debt_by_year[max(debt_by_year)] - cash
         bridge = "filed debt − cash"

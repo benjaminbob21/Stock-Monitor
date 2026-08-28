@@ -37,9 +37,7 @@ def _healthy_facts() -> list[FundamentalFact]:
     for i, year in enumerate(range(2021, 2025)):
         ocf = 1000.0 + 250.0 * i
         facts.append(_fact("NetCashProvidedByUsedInOperatingActivities", ocf, year))
-        facts.append(
-            _fact("PaymentsToAcquirePropertyPlantAndEquipment", 100.0, year)
-        )
+        facts.append(_fact("PaymentsToAcquirePropertyPlantAndEquipment", 100.0, year))
     facts.append(_fact("CommonStockSharesOutstanding", 1000.0, 2024))
     facts.append(_fact("StockholdersEquity", 5000.0, 2024))
     facts.append(_fact("Liabilities", 2000.0, 2024))
@@ -100,9 +98,7 @@ def test_dcf_negative_fcf_with_manual_growth_still_values() -> None:
         _fact("NetCashProvidedByUsedInOperatingActivities", -500.0, 2024),
         _fact("CommonStockSharesOutstanding", 1000.0, 2024),
     ]
-    result = compute_dcf(
-        facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.15
-    )
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.15)
     assert result["value"] is not None
 
 
@@ -155,9 +151,7 @@ def test_dcf_invalid_wacc_rejected() -> None:
 
 
 def test_dcf_terminal_growth_must_be_below_wacc() -> None:
-    result = compute_dcf(
-        _healthy_facts(), price=50.0, wacc=0.03, terminal_growth=0.03
-    )
+    result = compute_dcf(_healthy_facts(), price=50.0, wacc=0.03, terminal_growth=0.03)
     assert result["value"] is None
 
 
@@ -166,6 +160,21 @@ def test_dcf_no_price_still_returns_value_but_no_verdict() -> None:
     assert result["value"] is not None
     assert result["upside_pct"] is None
     assert result["verdict"] is None
+
+
+def test_dcf_financial_liabilities_not_netted_as_debt() -> None:
+    # A bank's total liabilities (deposits etc.) dwarf enterprise value; netting
+    # them produced negative equity for every financial. Capex-less companies
+    # fall back to filed borrowings instead.
+    facts = [
+        f for f in _healthy_facts() if f.concept != "PaymentsToAcquirePropertyPlantAndEquipment"
+    ]
+    facts.append(_fact("LongTermDebtNoncurrent", 400.0, 2024))
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28))
+    assert result["confidence"] == "rough"
+    assert result["inputs"]["bridge"].startswith("filed debt")
+    assert result["inputs"]["net_debt"] == 400.0 - 500.0
+    assert result["value"] is not None and result["value"] > 0
 
 
 # ---------- endpoint ----------
@@ -178,9 +187,7 @@ class _FakePriceProvider:
     def get_prices(self, ticker: str, start: Any, end: Any) -> Any:  # noqa: ARG002, U100
         import pandas as pd
 
-        return pd.DataFrame(
-            {"close": [50.0]}, index=[dt.date.today() - dt.timedelta(days=1)]
-        )
+        return pd.DataFrame({"close": [50.0]}, index=[dt.date.today() - dt.timedelta(days=1)])
 
 
 class _FakeFundamentals:
@@ -195,14 +202,20 @@ def test_dcf_endpoint_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
         sys.modules["stock_monitor.api.app"],
         "get_settings",
         lambda: SimpleNamespace(
-            api_shared_secret=None, run_scheduler=False, llm_analyst_enabled=False,
-            openrouter_api_key="", llm_model="test/model",
+            api_shared_secret=None,
+            run_scheduler=False,
+            llm_analyst_enabled=False,
+            openrouter_api_key="",
+            llm_model="test/model",
             llm_base_url="https://llm.test/api/v1",
         ),
     )
     state = SimpleNamespace(
-        model=object(), model_version="t", price_provider=_FakePriceProvider(),
-        fundamental_provider=_FakeFundamentals(), db_path=None,
+        model=object(),
+        model_version="t",
+        price_provider=_FakePriceProvider(),
+        fundamental_provider=_FakeFundamentals(),
+        db_path=None,
         label_window_months=6,
     )
     app.dependency_overrides[get_state] = lambda: state
@@ -226,14 +239,20 @@ def test_dcf_endpoint_passes_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
         sys.modules["stock_monitor.api.app"],
         "get_settings",
         lambda: SimpleNamespace(
-            api_shared_secret=None, run_scheduler=False, llm_analyst_enabled=False,
-            openrouter_api_key="", llm_model="test/model",
+            api_shared_secret=None,
+            run_scheduler=False,
+            llm_analyst_enabled=False,
+            openrouter_api_key="",
+            llm_model="test/model",
             llm_base_url="https://llm.test/api/v1",
         ),
     )
     state = SimpleNamespace(
-        model=object(), model_version="t", price_provider=_FakePriceProvider(),
-        fundamental_provider=_FakeFundamentals(), db_path=None,
+        model=object(),
+        model_version="t",
+        price_provider=_FakePriceProvider(),
+        fundamental_provider=_FakeFundamentals(),
+        db_path=None,
         label_window_months=6,
     )
     app.dependency_overrides[get_state] = lambda: state
@@ -257,15 +276,21 @@ def test_dcf_endpoint_no_fundamentals_is_none_not_crash(
         sys.modules["stock_monitor.api.app"],
         "get_settings",
         lambda: SimpleNamespace(
-            api_shared_secret=None, run_scheduler=False, llm_analyst_enabled=False,
-            openrouter_api_key="", llm_model="test/model",
+            api_shared_secret=None,
+            run_scheduler=False,
+            llm_analyst_enabled=False,
+            openrouter_api_key="",
+            llm_model="test/model",
             llm_base_url="https://llm.test/api/v1",
         ),
     )
     state = SimpleNamespace(
-        model=object(), model_version="t", price_provider=_FakePriceProvider(),
+        model=object(),
+        model_version="t",
+        price_provider=_FakePriceProvider(),
         fundamental_provider=_FakeFundamentals.__new__(_FakeFundamentals),
-        db_path=None, label_window_months=6,
+        db_path=None,
+        label_window_months=6,
     )
     state.fundamental_provider.get_fundamentals = lambda ticker, concepts=None: []
     app.dependency_overrides[get_state] = lambda: state

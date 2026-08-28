@@ -180,23 +180,21 @@ CREATE TABLE IF NOT EXISTS news_articles (
 -- engagement-weighted aggregate the allocation engine consumes. Reddit is optional
 -- (OAuth creds in .env); RSS works without any key.
 CREATE TABLE IF NOT EXISTS alt_posts (
-    ticker VARCHAR NOT NULL,
     published TIMESTAMP,
     headline VARCHAR NOT NULL,
     source VARCHAR,
     url VARCHAR,
-    sentiment DOUBLE,
-    backend VARCHAR,
     engagement INTEGER DEFAULT 0,
     ingested_at TIMESTAMP DEFAULT now(),
-    PRIMARY KEY (ticker, url, headline)
+    PRIMARY KEY (url, headline)
 );
 
 CREATE TABLE IF NOT EXISTS alt_sentiment (
     ticker VARCHAR NOT NULL,
     date DATE NOT NULL,
     sentiment DOUBLE,
-    post_count INTEGER,
+    buzz INTEGER,
+    summary VARCHAR,
     backend VARCHAR,
     ingested_at TIMESTAMP DEFAULT now(),
     PRIMARY KEY (ticker, date)
@@ -255,9 +253,7 @@ class Storage:
         (no data loss) — the features table is append/upsert-only.
         """
         for column in FEATURE_COLUMNS:
-            self._con.execute(
-                f"ALTER TABLE features ADD COLUMN IF NOT EXISTS {column} DOUBLE"
-            )
+            self._con.execute(f"ALTER TABLE features ADD COLUMN IF NOT EXISTS {column} DOUBLE")
 
     def __enter__(self) -> Storage:
         return self
@@ -347,8 +343,17 @@ class Storage:
     def count(self, table: str) -> int:
         """Return the row count of one of the known tables."""
         if table not in {
-            "features", "scores", "quarantine", "opportunities", "runs", "positions",
-            "alerts", "paper_picks", "news_sentiment", "news_articles", "backtest_results",
+            "features",
+            "scores",
+            "quarantine",
+            "opportunities",
+            "runs",
+            "positions",
+            "alerts",
+            "paper_picks",
+            "news_sentiment",
+            "news_articles",
+            "backtest_results",
             "macro_series",
         }:
             raise ValueError(f"unknown table: {table}")
@@ -378,8 +383,7 @@ class Storage:
         signal actually *changes* to 'consider selling', not every hour it sits there).
         """
         row = self._con.execute(
-            "SELECT detail FROM alerts WHERE ticker = ? AND kind = ? "
-            "ORDER BY sent_at DESC LIMIT 1",
+            "SELECT detail FROM alerts WHERE ticker = ? AND kind = ? ORDER BY sent_at DESC LIMIT 1",
             [ticker, kind],
         ).fetchone()
         return row[0] if row else None
@@ -449,9 +453,7 @@ class Storage:
         ).fetchone()
         return self._position_row(row) if row is not None else None
 
-    def close_position(
-        self, position_id: str, sold_at: dt.datetime, sold_price: float
-    ) -> None:
+    def close_position(self, position_id: str, sold_at: dt.datetime, sold_price: float) -> None:
         """Mark a position sold, recording the date and price."""
         self._con.execute(
             "UPDATE positions SET status = 'sold', sold_at = ?, sold_price = ? WHERE id = ?",
@@ -475,9 +477,7 @@ class Storage:
 
     def read_last_run(self, job: str, status: str | None = None) -> dict | None:
         """Return the most recent run for ``job`` (optionally filtered by status)."""
-        query = (
-            "SELECT job, status, detail, started_at, finished_at FROM runs WHERE job = ?"
-        )
+        query = "SELECT job, status, detail, started_at, finished_at FROM runs WHERE job = ?"
         params: list[object] = [job]
         if status is not None:
             query += " AND status = ?"
@@ -617,9 +617,7 @@ class Storage:
                 "SELECT * FROM news_sentiment WHERE ticker = ? ORDER BY date",
                 [ticker.upper()],
             ).df()
-        return self._con.execute(
-            "SELECT * FROM news_sentiment ORDER BY ticker, date"
-        ).df()
+        return self._con.execute("SELECT * FROM news_sentiment ORDER BY ticker, date").df()
 
     def latest_news_date(self) -> dt.date | None:
         """Return the most recent day we have stored news sentiment for.
@@ -635,9 +633,7 @@ class Storage:
         """Insert-or-replace macro vintages keyed by (series_id, obs_date, realtime_start)."""
         if df is None or df.empty:
             return 0
-        sub = df.reindex(
-            columns=["series_id", "obs_date", "realtime_start", "value"]
-        ).copy()
+        sub = df.reindex(columns=["series_id", "obs_date", "realtime_start", "value"]).copy()
         self._con.register("_incoming_macro", sub)
         try:
             self._con.execute(
@@ -729,65 +725,67 @@ class Storage:
             self._con.unregister("_articles_tmp")
         return int(len(frame))
 
-    def upsert_alt_posts(self, df: pd.DataFrame) -> int:
-        """Upsert raw alt-sentiment posts (Reddit/RSS archive). Returns rows written.
+    def record_alt_posts(self, posts: list[dict]) -> int:
+        """Archive raw alt-sentiment posts (audit trail; ticker assigned by the LLM later).
 
-        Expected columns: ``ticker``, ``published`` (nullable), ``headline``,
-        ``source``, ``url``, ``sentiment``, ``backend``, ``engagement``.
-        Idempotent on (ticker, url, headline); rows without a URL are dropped since
-        the URL anchors the permanent key.
+        Expected keys: ``published`` (nullable), ``text``/``headline``, ``source``,
+        ``url``, ``engagement``. Idempotent on (url, headline); rows without a URL
+        are dropped since the URL anchors the permanent key.
         """
-        if df is None or df.empty:
+        if not posts:
             return 0
-        cols = [
-            "ticker", "published", "headline", "source",
-            "url", "sentiment", "backend", "engagement",
-        ]
-        frame = df[cols].copy().dropna(subset=["url", "headline"])
+        frame = pd.DataFrame(
+            [
+                {
+                    "published": p.get("published"),
+                    "headline": p.get("headline") or p.get("text") or "",
+                    "source": p.get("source"),
+                    "url": p.get("url"),
+                    "engagement": int(p.get("engagement") or 0),
+                }
+                for p in posts
+            ]
+        ).dropna(subset=["url", "headline"])
+        frame = frame[frame["headline"] != ""]
         if frame.empty:
             return 0
         self._con.register("_alt_tmp", frame)
         try:
             self._con.execute(
                 """
-                INSERT INTO alt_posts
-                    (ticker, published, headline, source, url, sentiment, backend, engagement)
-                SELECT ticker, published, headline, source, url, sentiment, backend, engagement
-                FROM _alt_tmp
-                ON CONFLICT (ticker, url, headline) DO UPDATE SET
-                    sentiment = excluded.sentiment,
-                    engagement = excluded.engagement,
-                    backend = excluded.backend
+                INSERT INTO alt_posts (published, headline, source, url, engagement)
+                SELECT published, headline, source, url, engagement FROM _alt_tmp
+                ON CONFLICT (url, headline) DO NOTHING
                 """
             )
         finally:
             self._con.unregister("_alt_tmp")
         return int(len(frame))
 
-    def upsert_alt_sentiment(self, df: pd.DataFrame) -> int:
-        """Upsert daily per-ticker alt-sentiment aggregate. Returns rows written.
+    def upsert_alt_sentiment_llm(self, rows: list[dict]) -> int:
+        """Upsert LLM-derived per-ticker alt-sentiment verdicts. Returns rows written.
 
-        Expected columns: ``ticker``, ``date``, ``sentiment``, ``post_count``,
+        Expected keys: ``ticker``, ``date``, ``sentiment``, ``buzz``, ``summary``,
         ``backend``. Idempotent on (ticker, date).
         """
-        if df is None or df.empty:
+        if not rows:
             return 0
-        cols = ["ticker", "date", "sentiment", "post_count", "backend"]
-        frame = df[cols].copy()
-        self._con.register("_alt_sent_tmp", frame)
+        frame = pd.DataFrame(rows)
+        self._con.register("_alt_llm_tmp", frame)
         try:
             self._con.execute(
                 """
-                INSERT INTO alt_sentiment (ticker, date, sentiment, post_count, backend)
-                SELECT ticker, date, sentiment, post_count, backend FROM _alt_sent_tmp
+                INSERT INTO alt_sentiment (ticker, date, sentiment, buzz, summary, backend)
+                SELECT ticker, date, sentiment, buzz, summary, backend FROM _alt_llm_tmp
                 ON CONFLICT (ticker, date) DO UPDATE SET
                     sentiment = excluded.sentiment,
-                    post_count = excluded.post_count,
+                    buzz = excluded.buzz,
+                    summary = excluded.summary,
                     backend = excluded.backend
                 """
             )
         finally:
-            self._con.unregister("_alt_sent_tmp")
+            self._con.unregister("_alt_llm_tmp")
         return int(len(frame))
 
     def read_alt_sentiment(self, ticker: str | None = None) -> pd.DataFrame:
@@ -806,9 +804,7 @@ class Storage:
                 "SELECT * FROM news_articles WHERE ticker = ? ORDER BY published DESC",
                 [ticker.upper()],
             ).df()
-        return self._con.execute(
-            "SELECT * FROM news_articles ORDER BY ticker, published DESC"
-        ).df()
+        return self._con.execute("SELECT * FROM news_articles ORDER BY ticker, published DESC").df()
 
     # ------------------------------------------------------------------ paper mode
     def create_basket(
@@ -913,13 +909,10 @@ class Storage:
         ).fetchall()
         return [self._basket_item_row(r) for r in rows]
 
-    def sell_basket_item(
-        self, item_id: str, sold_at: dt.datetime, sold_price: float
-    ) -> None:
+    def sell_basket_item(self, item_id: str, sold_at: dt.datetime, sold_price: float) -> None:
         """Mark one leg of a basket sold at a price (the other legs stay open)."""
         self._con.execute(
-            "UPDATE basket_items SET status = 'sold', sold_at = ?, sold_price = ? "
-            "WHERE id = ?",
+            "UPDATE basket_items SET status = 'sold', sold_at = ?, sold_price = ? WHERE id = ?",
             [sold_at, sold_price, item_id],
         )
 
@@ -964,8 +957,16 @@ class Storage:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
             """,
             [
-                pick_id, ticker, pick_date, conviction, recommendation, horizon_months,
-                entry_price, benchmark_entry, model_version, matured_on,
+                pick_id,
+                ticker,
+                pick_date,
+                conviction,
+                recommendation,
+                horizon_months,
+                entry_price,
+                benchmark_entry,
+                model_version,
+                matured_on,
             ],
         )
         return self.count("paper_picks") > before
@@ -1028,8 +1029,13 @@ class Storage:
             WHERE id = ?
             """,
             [
-                exit_price, benchmark_exit, stock_return, benchmark_return,
-                excess_return, beat_benchmark, pick_id,
+                exit_price,
+                benchmark_exit,
+                stock_return,
+                benchmark_return,
+                excess_return,
+                beat_benchmark,
+                pick_id,
             ],
         )
 
@@ -1058,9 +1064,17 @@ class Storage:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                n_periods, universe_size, top_k, cost_bps, strategy_total_return,
-                benchmark_total_return, excess_return, strategy_cagr, benchmark_cagr,
-                max_drawdown, hit_rate,
+                n_periods,
+                universe_size,
+                top_k,
+                cost_bps,
+                strategy_total_return,
+                benchmark_total_return,
+                excess_return,
+                strategy_cagr,
+                benchmark_cagr,
+                max_drawdown,
+                hit_rate,
             ],
         )
 

@@ -22,14 +22,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
 import time
 from typing import Any
 
-import pandas as pd
-
 from stock_monitor.config import Settings
-from stock_monitor.sentiment import get_sentiment_analyzer
 from stock_monitor.storage.db import Storage
 from stock_monitor.universe import get_scan_universe
 
@@ -40,81 +36,25 @@ _REDDIT_OAUTH_URL = "https://www.reddit.com/api/v1/access_token"
 _REDDIT_NEW_URL = "https://oauth.reddit.com/r/{sub}/new"
 
 MEDIA_RSS_FEEDS: tuple[tuple[str, str], ...] = (
-    ("cnbc", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01"),
-    ("motleyfool", "https://www.fool.com/feeds/rss/news.xml"),
-    ("forbes", "https://www.forbes.com/money/feed/"),
+    ("cnbc", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ("wsj-markets", "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"),
+    ("investing", "https://www.investing.com/rss/news.rss"),
     ("yahoo", "https://finance.yahoo.com/news/rssindex"),
 )
 
-# Ticker tokens we must never match even if they appear like $SYMBOL.
-_TICKER_STOP = {
-    "DD",
-    "YOLO",
-    "LOL",
-    "ITM",
-    "OTM",
-    "ATH",
-    "IPO",
-    "CEO",
-    "CFO",
-    "EPS",
-    "GDP",
-    "FED",
-    "APR",
-    "JAN",
-    "FEB",
-    "MAR",
-    "MAY",
-    "JUN",
-    "JUL",
-    "AUG",
-    "SEP",
-    "OCT",
-    "NOV",
-    "DEC",
-    "USA",
-    "UK",
-    "EU",
-    "AI",
-    "WSB",
-}
+_BIWEEKLY_CRON_DAY = "1,15"
 
-_TICKER_RE = re.compile(r"\$([A-Z]{1,5})\b|\b([A-Z]{2,5})\b")
-
-
-def _safe_text(el: Any) -> str:
-    return (el.text or "").strip() if el is not None and el.text else ""
-
-
-def _match_company_names(text: str, universe: set[str], names: dict[str, str]) -> set[str]:
-    """Map full company names in ``text`` to tickers, restricted to ``universe``.
-
-    ``names`` maps NAME → ticker. Names longer than one word require a whole-phrase
-    hit so "apple" in a recipe context doesn't fire — only AAPL-eligible names.
-    """
-    up = f" {text.upper()} "
-    found: set[str] = set()
-    for name, ticker in names.items():
-        if ticker not in universe:
-            continue
-        if " " in name:
-            if f" {name} " in up:
-                found.add(ticker)
-        elif re.search(rf"\b{re.escape(name)}\b", up):
-            found.add(ticker)
-    return found
-
-
-def _match_tickers(text: str, universe: set[str]) -> set[str]:
-    """Extract mentioned tickers: $CASHTAGS always count; bare words only if in-universe."""
-    found: set[str] = set()
-    for cash, word in _TICKER_RE.findall(text.upper()):
-        tok = cash or word
-        if tok in _TICKER_STOP:
-            continue
-        if cash or tok in universe:
-            found.add(tok)
-    return found
+_LLM_SYSTEM_PROMPT = """You are the market-chatter analyst for a personal stock portfolio tool.
+You are given a raw batch of recent Reddit finance posts and financial-media headlines.
+Identify every clearly-identifiable publicly-traded company/ETF being discussed (match
+casual names, misspellings, $CASHTAGS, and tickers yourself). Ignore generic market talk
+with no specific ticker. For each ticker return:
+- sentiment: number in [-1, 1] where -1 = crowd/outlets are bearish, +1 = bullish
+- buzz: integer 0-10 for how much attention it is getting (0 = one stray mention)
+- summary: ONE short sentence (max 20 words) capturing the dominant narrative
+Only include tickers from the ALLOWED LIST if one is provided. Respond with JSON only:
+{"tickers": [{"ticker": "NVDA", "sentiment": 0.4, "buzz": 7, "summary": "..."}]}
+If nothing identifiable is discussed, return {"tickers": []}."""
 
 
 class RedditClient:
@@ -182,14 +122,16 @@ class RedditClient:
                     "source": f"reddit:{subreddit}",
                     "text": title,
                     "url": f"https://reddit.com{d.get('permalink', '')}",
-                    "published": dt.datetime.fromtimestamp(created) if created else None,
+                    "published": (dt.datetime.fromtimestamp(created) if created else None),
                     "engagement": int(d.get("score", 0)),
                 }
             )
         return posts
 
     def fetch_all(
-        self, subreddits: tuple[str, ...] = REDDIT_SUBREDDITS, limit: int = 100
+        self,
+        subreddits: tuple[str, ...] = REDDIT_SUBREDDITS,
+        limit: int = 100,
     ) -> list[dict]:
         posts: list[dict] = []
         for sub in subreddits:
@@ -197,7 +139,9 @@ class RedditClient:
         return posts
 
 
-def fetch_media_rss(feeds: tuple[tuple[str, str], ...] = MEDIA_RSS_FEEDS) -> list[dict]:
+def fetch_media_rss(
+    feeds: tuple[tuple[str, str], ...] = MEDIA_RSS_FEEDS,
+) -> list[dict]:
     """Pull headline items from financial-media RSS feeds (std-lib XML, no new dep)."""
     import xml.etree.ElementTree as ET
 
@@ -216,7 +160,7 @@ def fetch_media_rss(feeds: tuple[tuple[str, str], ...] = MEDIA_RSS_FEEDS) -> lis
             title_el = item.find("title")
             link_el = item.find("link")
             pub_el = item.find("pubDate")
-            title = (title_el.text or "").strip() if title_el is not None and title_el.text else ""
+            title = _safe_text(title_el)
             if not title:
                 continue
             published = None
@@ -239,115 +183,126 @@ def fetch_media_rss(feeds: tuple[tuple[str, str], ...] = MEDIA_RSS_FEEDS) -> lis
     return posts
 
 
-def collect_alt_sentiment(settings: Settings, *, limit_per_sub: int = 100) -> int:
-    """One batch: fetch Reddit + RSS, match tickers, FinBERT-score, store aggregates.
+def _safe_text(el: Any) -> str:
+    return (el.text or "").strip() if el is not None and el.text else ""
 
-    Universe = scan universe + holdings + latest opportunities (same as news collect).
-    Returns the number of ``alt_posts`` rows archived. Safe to re-run; the tables are
-    idempotent on (source-url) / (ticker, date).
+
+def _llm_read_batch(posts: list[dict], settings: Settings) -> list[dict]:
+    """One LLM call over the whole raw batch → per-ticker verdicts.
+
+    The LLM only CLASSIFIES chatter; the allocation engine still owns all weight math.
+    Returns a list of dicts: ticker, sentiment, buzz, summary.
     """
-    from stock_monitor.symbols import SymbolDirectory
+    import json
 
-    reddit = None
+    import requests
+
+    if not settings.openrouter_api_key:
+        logger.warning("no openrouter key; skipping LLM alt-sentiment read")
+        return []
+
+    lines = [
+        f"[{p['source']}] {p['text']}"
+        + (f" (upvotes: {p['engagement']})" if p["engagement"] else "")
+        for p in posts
+    ]
+    body: dict[str, Any] = {
+        "model": settings.llm_model,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": _LLM_SYSTEM_PROMPT},
+            {"role": "user", "content": "\n".join(lines)},
+        ],
+    }
+    try:
+        resp = requests.post(
+            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://stock-monitor.vercel.app",
+                "X-Title": "Stock Monitor",
+            },
+            json=body,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        parsed = json.loads(resp.json()["choices"][0]["message"]["content"])
+    except Exception:  # noqa: BLE001 — collector must never crash the scheduler
+        logger.exception("LLM alt-sentiment batch read failed")
+        return []
+
+    verdicts: list[dict] = []
+    for row in parsed.get("tickers", []):
+        try:
+            verdicts.append(
+                {
+                    "ticker": str(row["ticker"]).upper().strip(),
+                    "sentiment": max(-1.0, min(1.0, float(row["sentiment"]))),
+                    "buzz": max(0, min(10, int(row["buzz"]))),
+                    "summary": str(row.get("summary", ""))[:300],
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            logger.warning("skipping malformed LLM verdict row: %r", row)
+    return verdicts
+
+
+def collect_alt_sentiment(settings: Settings) -> int:
+    """Biweekly batch: ping Reddit + RSS once, let the LLM read the raw batch.
+
+    Cadence (approved 2026-08-28): every 2 weeks, matching the user's trade cycle.
+    Fetching is tiny (3 subreddit pulls + 4 RSS feeds); an LLM call classifies the
+    whole batch into per-ticker sentiment/buzz/summary — no regex or FinBERT.
+    The verdicts land in ``alt_sentiment`` (per ticker) and the raw batch in
+    ``alt_posts`` (audit trail, tickers NULL until matched by the LLM).
+    Returns the number of tickers the LLM classified.
+    """
+
+    posts: list[dict] = []
     if settings.reddit_client_id and settings.reddit_client_secret:
         reddit = RedditClient(
             settings.reddit_client_id,
             settings.reddit_client_secret,
             settings.reddit_user_agent,
         )
+        posts.extend(reddit.fetch_all())
     else:
         logger.warning("reddit credentials missing; collecting media RSS only")
-
-    posts: list[dict] = []
-    if reddit is not None:
-        posts.extend(reddit.fetch_all(limit=limit_per_sub))
     posts.extend(fetch_media_rss(MEDIA_RSS_FEEDS))
     if not posts:
-        logger.warning("alt-sentiment batch found nothing to score")
+        logger.warning("alt-sentiment batch found nothing to read")
         return 0
 
-    analyzer = get_sentiment_analyzer(settings)
+    verdicts = _llm_read_batch(posts, settings)
+
     with Storage(settings.db_path) as storage:
-        holdings = {p["ticker"] for p in storage.list_positions() if p["status"] == "open"}
-        opportunities = {o["ticker"] for o in storage.read_latest_opportunities(limit=50)}
-        universe = {*get_scan_universe(settings), *holdings, *opportunities}
-
-        # Media headlines say "Nvidia", not "NVDA" — add name→ticker matching from
-        # the SEC registry (cached HTTP; falls back to token matching only).
-        names: dict[str, str] = {}
-        try:
-            by_ticker = SymbolDirectory()._load()
-            names = {
-                name.upper(): ticker
-                for ticker, name in by_ticker.items()
-                if name and 3 <= len(name) <= 40
-            }
-        except Exception:  # noqa: BLE001 — name matching is best-effort
-            logger.exception("company-name map unavailable; token matching only")
-
-        rows: list[dict] = []
-        for post in posts:
-            mentioned = _match_tickers(post["text"], universe)
-            mentioned |= _match_company_names(post["text"], universe, names)
-            for ticker in mentioned:
-                rows.append({**post, "ticker": ticker})
-        if not rows:
-            return 0
-
-        scores = analyzer.score_batch([r["text"] for r in rows])
-        for r, s in zip(rows, scores, strict=True):
-            r["sentiment"] = s
-            r["backend"] = getattr(analyzer, "name", "unknown")
-        frame = pd.DataFrame(rows)
-
-        archive = frame.rename(columns={"text": "headline"})[
-            [
-                "ticker",
-                "published",
-                "headline",
-                "source",
-                "url",
-                "sentiment",
-                "backend",
-                "engagement",
+        # Raw archive first (audit trail); ticker left NULL when the LLM didn't cite it.
+        storage.record_alt_posts(posts)
+        if verdicts:
+            allowed: set[str] | None = None
+            try:
+                allowed = set(get_scan_universe(settings)) | {
+                    p["ticker"] for p in storage.list_positions() if p["status"] == "open"
+                }
+            except Exception:  # noqa: BLE001 — universe lookup is best-effort
+                logger.exception("universe lookup failed; storing verdicts unfiltered")
+                allowed = None
+            rows = [
+                {
+                    "ticker": v["ticker"],
+                    "date": dt.date.today(),
+                    "sentiment": v["sentiment"],
+                    "buzz": v["buzz"],
+                    "summary": v["summary"],
+                    "backend": f"llm:{settings.llm_model}",
+                }
+                for v in verdicts
+                if allowed is None or v["ticker"] in allowed
             ]
-        ]
-        archived = storage.upsert_alt_posts(archive)
-
-        daily = _aggregate_daily(frame)
-        storage.upsert_alt_sentiment(daily)
+            storage.upsert_alt_sentiment_llm(rows)
     logger.info(
-        "alt-sentiment batch: %d posts, %d ticker rows archived, %d daily aggregates",
-        len(posts),
-        archived,
-        len(daily),
+        "alt-sentiment batch: %d raw posts, %d tickers classified", len(posts), len(verdicts)
     )
-    return archived
-
-
-def _aggregate_daily(frame: pd.DataFrame) -> pd.DataFrame:
-    """Engagement-weighted daily sentiment per ticker.
-
-    Reddit posts carry upvote scores; RSS carries none (weight 1), so a loud Reddit
-    thread outweighs a quiet one. A ticker with no coverage gets NO row (absence is
-    neutral by convention, same as news).
-    """
-    f = frame.copy()
-    f["date"] = pd.to_datetime(f["published"], errors="coerce").dt.date
-    # Undated rows can't anchor a daily aggregate (same rule as news articles).
-    f = f.dropna(subset=["date", "sentiment"])
-    if f.empty:
-        return pd.DataFrame(columns=["ticker", "date", "sentiment", "post_count", "backend"])
-    f["weight"] = f["engagement"].clip(lower=0).to_numpy() + 1.0
-    grouped = f.groupby("ticker", as_index=False).apply(
-        lambda g: pd.Series(
-            {
-                "date": g.loc[g.index[0], "date"],
-                "sentiment": (g["sentiment"] * g["weight"]).sum() / g["weight"].sum(),
-                "post_count": int(len(g)),
-                "backend": "finbert",
-            }
-        ),
-        include_groups=False,
-    )
-    return grouped
+    return len(verdicts)

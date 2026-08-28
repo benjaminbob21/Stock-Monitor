@@ -176,9 +176,11 @@ class Settings(BaseSettings):
     # Hour to collect + archive today's news (default just before the scan, so the
     # sentiment feature is fresh). Runs daily so we never lose a day of headlines.
     news_collect_hour: int = 21
-    # Hour to collect alt-sentiment (Reddit + media RSS) — one batched daily job.
-    # Reddit needs REDDIT_CLIENT_ID/SECRET (personal-use script app, free); RSS
-    # collects even without them.
+    # Hour to collect alt-sentiment (Reddit + media RSS). Biweekly (1st & 15th) to
+    # match the user's trade cycle: one batched fetch, then a SINGLE LLM call reads
+    # the whole raw batch and emits per-ticker sentiment/buzz/summary. Reddit needs
+    # REDDIT_CLIENT_ID/SECRET (personal-use script app, free); RSS collects even
+    # without them; the LLM read needs OPENROUTER_API_KEY.
     alt_sentiment_hour: int = 20
     alt_sentiment_enabled: bool = True
     reddit_client_id: str = ""

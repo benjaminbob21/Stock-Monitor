@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from stock_monitor.alt_sentiment import collect_alt_sentiment
+from stock_monitor.alt_sentiment import _BIWEEKLY_CRON_DAY, collect_alt_sentiment
 from stock_monitor.config import Settings, get_settings
 from stock_monitor.earnings import days_until_earnings, get_earnings_provider
 from stock_monitor.notify import Notifier, get_notifier
@@ -637,11 +637,13 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
     )
 
     if settings.alt_sentiment_enabled:
-        # Alt-sentiment batch (Reddit + media RSS → FinBERT → alt_* tables). One
-        # batched run/day; Reddit is 3 requests total, RSS is 4 feed pulls.
+        # Alt-sentiment batch (Reddit + media RSS → ONE LLM read → verdict tables).
+        # Biweekly (1st & 15th) to match the user's trade cycle; each run is 3 Reddit
+        # pulls + 4 RSS feeds + a single LLM call.
         scheduler.add_job(
             lambda: _safe(collect_alt_sentiment, settings),
             "cron",
+            day=_BIWEEKLY_CRON_DAY,
             hour=settings.alt_sentiment_hour,
             id="alt_sentiment",
             replace_existing=True,

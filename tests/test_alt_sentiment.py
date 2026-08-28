@@ -5,14 +5,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-import pandas as pd
 import pytest
 
 from stock_monitor.alt_sentiment import (
     RedditClient,
-    _aggregate_daily,
-    _match_company_names,
-    _match_tickers,
+    _llm_read_batch,
     collect_alt_sentiment,
     fetch_media_rss,
 )
@@ -67,22 +64,6 @@ class _FakeAnalyzer:
 
     def score_batch(self, texts: list[str]) -> list[float]:
         return [0.5 if "rallies" in t or "moon" in t else -0.5 for t in texts]
-
-
-@pytest.fixture()
-def _universe(monkeypatch: pytest.MonkeyPatch) -> None:
-    import stock_monitor.alt_sentiment as mod
-
-    monkeypatch.setattr(mod, "get_scan_universe", lambda *_: ["NVDA", "AAPL"])
-
-
-def test_match_tickers_cashtags_and_universe_words() -> None:
-    text = "$NVDA to the moon, also discussed AAPL and YOLO and GPU"
-    assert _match_tickers(text, {"NVDA", "AAPL"}) == {"NVDA", "AAPL"}
-
-
-def test_match_tickers_ignores_unknown_words() -> None:
-    assert _match_tickers("GPU holders DD thread", {"NVDA"}) == set()
 
 
 def test_reddit_client_fetch_and_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,118 +125,123 @@ def test_fetch_media_rss_dead_feed_is_skipped(monkeypatch: pytest.MonkeyPatch) -
     assert fetch_media_rss(feeds=(("cnbc", "https://x/rss"),)) == []
 
 
-def test_match_company_names_restricts_to_universe() -> None:
-    names = {"NVIDIA CORPORATION": "NVDA", "APPLE INC.": "AAPL", "MICROSOFT": "MSFT"}
-    text = "Nvidia Corporation Rallies; Apple Inc. Dips"
-    # MSFT not in universe -> never matched even though absent from text anyway.
-    assert _match_company_names(text, {"NVDA", "AAPL"}, names) == {"NVDA", "AAPL"}
+def test_llm_read_batch_parses_and_clamps(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
 
-
-def test_match_company_names_single_word_whole_token() -> None:
-    names = {"NVIDIA": "NVDA"}
-    assert _match_company_names("NVIDIA reports earnings", {"NVDA"}, names) == {"NVDA"}
-    assert _match_company_names("nonNVIDIA thing", {"NVDA"}, names) == set()
-
-
-def test_aggregate_daily_engagement_weights() -> None:
-    frame = pd.DataFrame(
-        [
-            {
-                "ticker": "NVDA",
-                "published": dt.datetime(2026, 8, 26, 9),
-                "sentiment": 1.0,
-                "engagement": 99,
-                "source": "reddit:wallstreetbets",
-            },
-            {
-                "ticker": "NVDA",
-                "published": dt.datetime(2026, 8, 26, 10),
-                "sentiment": -1.0,
-                "engagement": 1,
-                "source": "reddit:stocks",
-            },
-            {
-                "ticker": "NVDA",
-                "published": dt.datetime(2026, 8, 26, 11),
-                "sentiment": 0.4,
-                "engagement": 0,
-                "source": "rss:cnbc",
-            },
-        ]
-    )
-    daily = _aggregate_daily(frame)
-    row = daily[daily["ticker"] == "NVDA"].iloc[0]
-    # (1.0*100 + -1.0*2 + 0.4*1) / 103
-    assert row["sentiment"] == pytest.approx((100 - 2 + 0.4) / 103)
-    assert row["post_count"] == 3
-
-
-def test_collect_end_to_end(
-    monkeypatch: pytest.MonkeyPatch, _universe: None, tmp_path: Any
-) -> None:
-    def fake_post(*_: Any, **__: Any) -> _FakeResponse:
-        return _FakeResponse({"access_token": "t", "expires_in": 3600})
-
-    def fake_get(url: str, **__: Any) -> _FakeResponse:
-        if "oauth.reddit.com" in url:
-            return _FakeResponse(_reddit_children("$NVDA moon"))
-        return _FakeResponse(None, content=RSS_XML)
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["url"] = url
+        captured["body"] = kwargs["json"]
+        content = (
+            '{"tickers": ['
+            '{"ticker": "nvda", "sentiment": 0.9, "buzz": 99, "summary": "moon"},'
+            '{"ticker": "BAD", "sentiment": "x", "buzz": 1, "summary": "bad row"},'
+            '{"ticker": "TSLA", "sentiment": -2.0, "buzz": 3, "summary": "clamped"}'
+            "]}"
+        )
+        return _FakeResponse({"choices": [{"message": {"content": content}}]})
 
     import requests
 
     monkeypatch.setattr(requests, "post", fake_post)
-    monkeypatch.setattr(requests, "get", fake_get)
-
-    settings = Settings(
-        db_path=str(tmp_path / "t.duckdb"),
-        sentiment_backend="vader",
-        reddit_client_id="id",
-        reddit_client_secret="sec",
-    )
-
-    import stock_monitor.alt_sentiment as mod
-
-    monkeypatch.setattr(mod, "get_sentiment_analyzer", lambda _s: _FakeAnalyzer())
-    monkeypatch.setattr(mod, "MEDIA_RSS_FEEDS", (("cnbc", "https://x/rss"),))
-
-    real_storage = mod.Storage(settings.db_path)
-    monkeypatch.setattr(mod, "Storage", lambda _p: real_storage)
-    # collect uses `with Storage(...)` which closes on exit; keep it open for reads.
-    monkeypatch.setattr(type(real_storage), "__exit__", lambda self, *exc: None)
-
-    archived = collect_alt_sentiment(settings)
-    assert archived == 5  # 3× "$NVDA moon" (one per sub) + NVDA/AAPL rss items
-
-    daily = real_storage.read_alt_sentiment()
-    assert {"NVDA", "AAPL"} <= set(daily["ticker"])
-    assert (daily["post_count"] >= 1).all()
-    real_storage.close()
+    settings = Settings(openrouter_api_key="k", llm_model="m")
+    posts = [
+        {"source": "reddit:wallstreetbets", "text": "$NVDA to the moon", "engagement": 42},
+        {"source": "rss:cnbc", "text": "TSLA cuts prices", "engagement": 0},
+    ]
+    verdicts = _llm_read_batch(posts, settings)
+    assert captured["url"].endswith("/chat/completions")
+    assert verdicts == [
+        {"ticker": "NVDA", "sentiment": 0.9, "buzz": 10, "summary": "moon"},
+        {"ticker": "TSLA", "sentiment": -1.0, "buzz": 3, "summary": "clamped"},
+    ]
 
 
-def test_collect_without_reddit_still_collects_rss(
-    monkeypatch: pytest.MonkeyPatch, _universe: None, tmp_path: Any
-) -> None:
+def test_llm_read_batch_requires_key() -> None:
+    assert _llm_read_batch([{"source": "s", "text": "x", "engagement": 0}], Settings()) == []
+
+
+def test_llm_read_batch_api_failure_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     import requests
 
-    def no_post(*_: Any, **__: Any) -> Any:
-        raise AssertionError("no reddit token calls expected")
+    def boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("502")
 
-    monkeypatch.setattr(requests, "post", no_post)
+    monkeypatch.setattr(requests, "post", boom)
+    settings = Settings(openrouter_api_key="k")
+    assert _llm_read_batch([{"source": "s", "text": "x", "engagement": 0}], settings) == []
+
+
+def test_collect_end_to_end(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    import requests
+
+    def fake_post(url: str, **__: Any) -> _FakeResponse:
+        if (
+            "oauth.reddit.com" not in url
+            and "access_token" not in url
+            and "api/v1/access_token" not in url
+        ):
+            content = (
+                '{"tickers": [{"ticker": "NVDA", "sentiment": 0.5, "buzz": 6, "summary": "hype"}]}'
+            )
+            return _FakeResponse({"choices": [{"message": {"content": content}}]})
+        if "token" in url:
+            return _FakeResponse({"access_token": "t", "expires_in": 3600})
+        return _FakeResponse(_reddit_children("$NVDA moon"))
+
+    monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(None, content=RSS_XML))
 
     import stock_monitor.alt_sentiment as mod
 
-    settings = Settings(db_path=str(tmp_path / "t.duckdb"), sentiment_backend="vader")
-    monkeypatch.setattr(mod, "get_sentiment_analyzer", lambda _s: _FakeAnalyzer())
+    settings = Settings(
+        db_path=str(tmp_path / "t.duckdb"),
+        reddit_client_id="id",
+        reddit_client_secret="sec",
+        openrouter_api_key="k",
+    )
     monkeypatch.setattr(mod, "MEDIA_RSS_FEEDS", (("cnbc", "https://x/rss"),))
+    monkeypatch.setattr(mod, "get_scan_universe", lambda *_: ["NVDA", "AAPL"])
 
     real_storage = mod.Storage(settings.db_path)
     monkeypatch.setattr(mod, "Storage", lambda _p: real_storage)
     monkeypatch.setattr(type(real_storage), "__exit__", lambda self, *exc: None)
+    # Open positions list used for the allowed-universe filter.
+    monkeypatch.setattr(real_storage, "list_positions", lambda: [])
 
-    archived = collect_alt_sentiment(settings)
-    assert archived == 2  # only the RSS items
+    classified = collect_alt_sentiment(settings)
+    assert classified == 1
 
     daily = real_storage.read_alt_sentiment()
-    assert set(daily["ticker"]) == {"NVDA", "AAPL"}
+    assert set(daily["ticker"]) == {"NVDA"}
+    row = daily.iloc[0]
+    assert row["buzz"] == 6
+    assert row["backend"].startswith("llm:")
+    real_storage.close()
+
+
+def test_collect_without_reddit_still_reads_rss(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    import requests
+
+    def no_token_post(*_: Any, **__: Any) -> Any:
+        raise AssertionError("no reddit token calls expected")
+
+    monkeypatch.setattr(requests, "post", no_token_post)
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(None, content=RSS_XML))
+
+    import stock_monitor.alt_sentiment as mod
+
+    settings = Settings(db_path=str(tmp_path / "t.duckdb"), openrouter_api_key="k")
+    monkeypatch.setattr(mod, "MEDIA_RSS_FEEDS", (("cnbc", "https://x/rss"),))
+    monkeypatch.setattr(mod, "get_scan_universe", lambda *_: ["NVDA", "AAPL"])
+
+    real_storage = mod.Storage(settings.db_path)
+    monkeypatch.setattr(mod, "Storage", lambda _p: real_storage)
+    monkeypatch.setattr(type(real_storage), "__exit__", lambda self, *exc: None)
+    monkeypatch.setattr(real_storage, "list_positions", lambda: [])
+    # LLM read via requests.post is blocked above → verdicts [] but raw posts stored.
+    assert collect_alt_sentiment(settings) == 0
+    raw = real_storage._con.execute("select count(*) from alt_posts").fetchone()
+    assert raw[0] == 2
     real_storage.close()

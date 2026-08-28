@@ -11,6 +11,7 @@ import pytest
 from stock_monitor.alt_sentiment import (
     RedditClient,
     _aggregate_daily,
+    _match_company_names,
     _match_tickers,
     collect_alt_sentiment,
     fetch_media_rss,
@@ -125,9 +126,7 @@ def test_reddit_client_bad_credentials_returns_empty(monkeypatch: pytest.MonkeyP
 def test_fetch_media_rss_parses_feeds(monkeypatch: pytest.MonkeyPatch) -> None:
     import requests
 
-    monkeypatch.setattr(
-        requests, "get", lambda *a, **k: _FakeResponse(None, content=RSS_XML)
-    )
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(None, content=RSS_XML))
     items = fetch_media_rss(feeds=(("cnbc", "https://x/rss"),))
     assert len(items) == 2
     assert items[0]["source"] == "rss:cnbc"
@@ -145,15 +144,43 @@ def test_fetch_media_rss_dead_feed_is_skipped(monkeypatch: pytest.MonkeyPatch) -
     assert fetch_media_rss(feeds=(("cnbc", "https://x/rss"),)) == []
 
 
+def test_match_company_names_restricts_to_universe() -> None:
+    names = {"NVIDIA CORPORATION": "NVDA", "APPLE INC.": "AAPL", "MICROSOFT": "MSFT"}
+    text = "Nvidia Corporation Rallies; Apple Inc. Dips"
+    # MSFT not in universe -> never matched even though absent from text anyway.
+    assert _match_company_names(text, {"NVDA", "AAPL"}, names) == {"NVDA", "AAPL"}
+
+
+def test_match_company_names_single_word_whole_token() -> None:
+    names = {"NVIDIA": "NVDA"}
+    assert _match_company_names("NVIDIA reports earnings", {"NVDA"}, names) == {"NVDA"}
+    assert _match_company_names("nonNVIDIA thing", {"NVDA"}, names) == set()
+
+
 def test_aggregate_daily_engagement_weights() -> None:
     frame = pd.DataFrame(
         [
-            {"ticker": "NVDA", "published": dt.datetime(2026, 8, 26, 9),
-             "sentiment": 1.0, "engagement": 99, "source": "reddit:wallstreetbets"},
-            {"ticker": "NVDA", "published": dt.datetime(2026, 8, 26, 10),
-             "sentiment": -1.0, "engagement": 1, "source": "reddit:stocks"},
-            {"ticker": "NVDA", "published": dt.datetime(2026, 8, 26, 11),
-             "sentiment": 0.4, "engagement": 0, "source": "rss:cnbc"},
+            {
+                "ticker": "NVDA",
+                "published": dt.datetime(2026, 8, 26, 9),
+                "sentiment": 1.0,
+                "engagement": 99,
+                "source": "reddit:wallstreetbets",
+            },
+            {
+                "ticker": "NVDA",
+                "published": dt.datetime(2026, 8, 26, 10),
+                "sentiment": -1.0,
+                "engagement": 1,
+                "source": "reddit:stocks",
+            },
+            {
+                "ticker": "NVDA",
+                "published": dt.datetime(2026, 8, 26, 11),
+                "sentiment": 0.4,
+                "engagement": 0,
+                "source": "rss:cnbc",
+            },
         ]
     )
     daily = _aggregate_daily(frame)
@@ -179,8 +206,12 @@ def test_collect_end_to_end(
     monkeypatch.setattr(requests, "post", fake_post)
     monkeypatch.setattr(requests, "get", fake_get)
 
-    settings = Settings(db_path=str(tmp_path / "t.duckdb"), sentiment_backend="vader",
-                        reddit_client_id="id", reddit_client_secret="sec")
+    settings = Settings(
+        db_path=str(tmp_path / "t.duckdb"),
+        sentiment_backend="vader",
+        reddit_client_id="id",
+        reddit_client_secret="sec",
+    )
 
     import stock_monitor.alt_sentiment as mod
 
@@ -190,9 +221,7 @@ def test_collect_end_to_end(
     real_storage = mod.Storage(settings.db_path)
     monkeypatch.setattr(mod, "Storage", lambda _p: real_storage)
     # collect uses `with Storage(...)` which closes on exit; keep it open for reads.
-    monkeypatch.setattr(
-        type(real_storage), "__exit__", lambda self, *exc: None
-    )
+    monkeypatch.setattr(type(real_storage), "__exit__", lambda self, *exc: None)
 
     archived = collect_alt_sentiment(settings)
     assert archived == 5  # 3× "$NVDA moon" (one per sub) + NVDA/AAPL rss items
@@ -222,9 +251,7 @@ def test_collect_without_reddit_still_collects_rss(
 
     real_storage = mod.Storage(settings.db_path)
     monkeypatch.setattr(mod, "Storage", lambda _p: real_storage)
-    monkeypatch.setattr(
-        type(real_storage), "__exit__", lambda self, *exc: None
-    )
+    monkeypatch.setattr(type(real_storage), "__exit__", lambda self, *exc: None)
 
     archived = collect_alt_sentiment(settings)
     assert archived == 2  # only the RSS items

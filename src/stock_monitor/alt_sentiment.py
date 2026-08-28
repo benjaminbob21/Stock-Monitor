@@ -48,9 +48,35 @@ MEDIA_RSS_FEEDS: tuple[tuple[str, str], ...] = (
 
 # Ticker tokens we must never match even if they appear like $SYMBOL.
 _TICKER_STOP = {
-    "DD", "YOLO", "LOL", "ITM", "OTM", "ATH", "IPO", "CEO", "CFO", "EPS", "GDP",
-    "FED", "APR", "JAN", "FEB", "MAR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT",
-    "NOV", "DEC", "USA", "UK", "EU", "AI", "WSB",
+    "DD",
+    "YOLO",
+    "LOL",
+    "ITM",
+    "OTM",
+    "ATH",
+    "IPO",
+    "CEO",
+    "CFO",
+    "EPS",
+    "GDP",
+    "FED",
+    "APR",
+    "JAN",
+    "FEB",
+    "MAR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+    "USA",
+    "UK",
+    "EU",
+    "AI",
+    "WSB",
 }
 
 _TICKER_RE = re.compile(r"\$([A-Z]{1,5})\b|\b([A-Z]{2,5})\b")
@@ -58,6 +84,25 @@ _TICKER_RE = re.compile(r"\$([A-Z]{1,5})\b|\b([A-Z]{2,5})\b")
 
 def _safe_text(el: Any) -> str:
     return (el.text or "").strip() if el is not None and el.text else ""
+
+
+def _match_company_names(text: str, universe: set[str], names: dict[str, str]) -> set[str]:
+    """Map full company names in ``text`` to tickers, restricted to ``universe``.
+
+    ``names`` maps NAME → ticker. Names longer than one word require a whole-phrase
+    hit so "apple" in a recipe context doesn't fire — only AAPL-eligible names.
+    """
+    up = f" {text.upper()} "
+    found: set[str] = set()
+    for name, ticker in names.items():
+        if ticker not in universe:
+            continue
+        if " " in name:
+            if f" {name} " in up:
+                found.add(ticker)
+        elif re.search(rf"\b{re.escape(name)}\b", up):
+            found.add(ticker)
+    return found
 
 
 def _match_tickers(text: str, universe: set[str]) -> set[str]:
@@ -201,6 +246,8 @@ def collect_alt_sentiment(settings: Settings, *, limit_per_sub: int = 100) -> in
     Returns the number of ``alt_posts`` rows archived. Safe to re-run; the tables are
     idempotent on (source-url) / (ticker, date).
     """
+    from stock_monitor.symbols import SymbolDirectory
+
     reddit = None
     if settings.reddit_client_id and settings.reddit_client_secret:
         reddit = RedditClient(
@@ -225,9 +272,23 @@ def collect_alt_sentiment(settings: Settings, *, limit_per_sub: int = 100) -> in
         opportunities = {o["ticker"] for o in storage.read_latest_opportunities(limit=50)}
         universe = {*get_scan_universe(settings), *holdings, *opportunities}
 
+        # Media headlines say "Nvidia", not "NVDA" — add name→ticker matching from
+        # the SEC registry (cached HTTP; falls back to token matching only).
+        names: dict[str, str] = {}
+        try:
+            by_ticker = SymbolDirectory()._load()
+            names = {
+                name.upper(): ticker
+                for ticker, name in by_ticker.items()
+                if name and 3 <= len(name) <= 40
+            }
+        except Exception:  # noqa: BLE001 — name matching is best-effort
+            logger.exception("company-name map unavailable; token matching only")
+
         rows: list[dict] = []
         for post in posts:
             mentioned = _match_tickers(post["text"], universe)
+            mentioned |= _match_company_names(post["text"], universe, names)
             for ticker in mentioned:
                 rows.append({**post, "ticker": ticker})
         if not rows:
@@ -240,8 +301,16 @@ def collect_alt_sentiment(settings: Settings, *, limit_per_sub: int = 100) -> in
         frame = pd.DataFrame(rows)
 
         archive = frame.rename(columns={"text": "headline"})[
-            ["ticker", "published", "headline", "source",
-             "url", "sentiment", "backend", "engagement"]
+            [
+                "ticker",
+                "published",
+                "headline",
+                "source",
+                "url",
+                "sentiment",
+                "backend",
+                "engagement",
+            ]
         ]
         archived = storage.upsert_alt_posts(archive)
 
@@ -249,7 +318,9 @@ def collect_alt_sentiment(settings: Settings, *, limit_per_sub: int = 100) -> in
         storage.upsert_alt_sentiment(daily)
     logger.info(
         "alt-sentiment batch: %d posts, %d ticker rows archived, %d daily aggregates",
-        len(posts), archived, len(daily),
+        len(posts),
+        archived,
+        len(daily),
     )
     return archived
 

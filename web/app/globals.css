@@ -2373,3 +2373,102 @@ body.sheet-open {
   min-width: 48px;
   text-align: right;
 }
+
+/* ---- DCF card ---- */
+.dcfcard {
+  padding: 12px 14px;
+}
+.dcfhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.dcftitle {
+  font-weight: 700;
+  font-size: 0.92rem;
+  flex: 1;
+}
+.dcfval {
+  font-weight: 800;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.dcfchev {
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+}
+.dcfchev.open {
+  transform: rotate(180deg);
+}
+.dcfline {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+}
+.dcfup {
+  color: var(--green);
+  font-weight: 700;
+}
+.dcfdown {
+  color: var(--red);
+  font-weight: 700;
+}
+.dcfbody {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.dcfmeta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted, #888);
+}
+.dcfmeta.warn {
+  color: var(--amber, #c77d00);
+}
+.dcfmeta.muted {
+  opacity: 0.7;
+}
+.dcferror {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--red);
+}
+.dcfform {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin-top: 6px;
+}
+.dcfform label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--muted, #888);
+}
+.dcfform input {
+  width: 90px;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  background: var(--bg-elev, #16181d);
+  color: inherit;
+  font-size: 0.85rem;
+}
+.dcfform button {
+  padding: 7px 12px;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  background: var(--bg-elev, #16181d);
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -35,7 +35,7 @@ from stock_monitor.positions import (
     open_position,
     sell_position,
 )
-from stock_monitor.providers.edgar_provider import EdgarProvider
+from stock_monitor.providers.edgar_provider import EdgarProvider, dcf_concepts
 from stock_monitor.sentiment import (
     NewsProvider,
     SentimentAnalyzer,
@@ -1099,6 +1099,50 @@ def review_endpoint(ticker: str, state: StateDep) -> dict[str, object]:
         "ticker": upper,
         "opinion": opinion,
         "note": None if opinion else "AI review unavailable (LLM call failed).",
+    }
+
+
+@app.get("/dcf/{ticker}")
+def dcf_endpoint(
+    ticker: str,
+    state: StateDep,
+    growth: float | None = None,
+    wacc: float | None = None,
+    terminal_growth: float | None = None,
+) -> dict[str, object]:
+    """DCF intrinsic value per share (deterministic; no LLM, no analyst guesses).
+
+    Inputs come from PIT SEC facts and live price. ``growth`` (opt, e.g. 0.12)
+    overrides the auto anchor (revenue CAGR when available); ``wacc`` (opt,
+    default 8.5%) and ``terminal_growth`` (opt, default 2.5%) are also tunable.
+    Returns a graded result — ``confidence: none`` with reasons when a DCF would
+    be fiction (e.g. negative cash flows with no anchor).
+    """
+    from stock_monitor.dcf import compute_dcf
+
+    upper = ticker.upper()
+    end = dt.date.today()
+    prices = state.price_provider.get_prices(upper, end - dt.timedelta(days=30), end)  # type: ignore[attr-defined]
+    price: float | None = None
+    if not prices.empty:
+        price = float(prices["close"].iloc[-1])
+    quote = state.price_provider.get_quote(upper)  # type: ignore[attr-defined]
+    if quote:
+        price = float(quote)
+
+    facts = state.fundamental_provider.get_fundamentals(upper, dcf_concepts())  # type: ignore[attr-defined]
+    result = compute_dcf(
+        facts,
+        price,
+        growth=growth,
+        wacc=wacc,
+        terminal_growth=terminal_growth,
+    )
+    return {
+        "ticker": upper,
+        "price": price,
+        "as_of": end.isoformat(),
+        **result,
     }
 
 

@@ -202,6 +202,44 @@ export interface ReviewResponse {
   note: string | null;
 }
 
+export interface DcfFlow {
+  year: number;
+  fcf: number;
+  pv: number;
+}
+
+export interface DcfInputs {
+  base_fcf: number | null;
+  fcf_years: string | null;
+  growth_pct: number | null;
+  growth_source: string | null;
+  wacc_pct: number | null;
+  terminal_growth_pct: number | null;
+  shares: number | null;
+  shares_known_on: string | null;
+  net_debt: number | null;
+  bridge: string | null;
+  cash_known_on: string | null;
+  price: number | null;
+  fundamentals_age_days: number | null;
+}
+
+export interface DcfResponse {
+  ticker: string;
+  price: number | null;
+  as_of: string;
+  value: number | null;
+  upside_pct: number | null;
+  confidence: "good" | "rough" | "none";
+  reasons: string[];
+  inputs: DcfInputs;
+  pv_explicit?: number;
+  pv_terminal?: number;
+  terminal_weight?: number | null;
+  flows?: DcfFlow[];
+  verdict?: "undervalued" | "overvalued" | "fairly valued" | null;
+}
+
 export interface BasketView {
   id: string;
   name: string;

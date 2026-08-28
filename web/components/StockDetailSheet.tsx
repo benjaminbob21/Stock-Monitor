@@ -2,6 +2,7 @@
 
 import { AnalystCard } from "@/components/AnalystCard";
 import { ConvictionCard } from "@/components/ConvictionCard";
+import { DcfCard } from "@/components/DcfCard";
 import { NewsPanel } from "@/components/NewsPanel";
 import { PlainSummaryCard } from "@/components/PlainSummaryCard";
 import { PriceChart } from "@/components/PriceChart";
@@ -139,6 +140,7 @@ export function StockDetailSheet({
             livePrice={data.price_is_live ? data.price : undefined}
           />
         )}
+        {data && ticker && <DcfCard ticker={ticker} />}
         {data && <AnalystCard analyst={analyst} />}
         {news && <NewsPanel news={news} />}
       </div>

@@ -43,6 +43,16 @@ DEFAULT_CONCEPTS: tuple[str, ...] = (
 _DEI_SHARES_CONCEPT = "EntityCommonStockSharesOutstanding"
 
 
+def dcf_concepts() -> tuple[str, ...]:
+    """Extra us-gaap concepts the DCF engine reads (beyond DEFAULT_CONCEPTS)."""
+    return (
+        "CashAndCashEquivalentsAtCarryingValue",
+        "LongTermDebtNoncurrent",
+        "LongTermDebtCurrent",
+        "ShortTermBorrowings",
+    )
+
+
 class EdgarProvider(FundamentalProvider):
     """Fetch point-in-time fundamentals from SEC EDGAR ``companyfacts``."""
 

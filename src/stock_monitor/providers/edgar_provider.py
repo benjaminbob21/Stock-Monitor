@@ -27,6 +27,9 @@ _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.js
 # A small, robust starter set mapped to quality/value factors (build-plan §2).
 DEFAULT_CONCEPTS: tuple[str, ...] = (
     "NetIncomeLoss",
+    # Quarterly net income is often filed under this alias only (e.g. Mastercard
+    # reports 10-Q income under ProfitLoss, leaving NetIncomeLoss to DEF 14A annuals).
+    "ProfitLoss",
     "StockholdersEquity",
     "Assets",
     "Liabilities",
@@ -86,8 +89,7 @@ class EdgarProvider(FundamentalProvider):
             resp = self._get(_TICKERS_URL)
             resp.raise_for_status()
             self._ticker_to_cik = {
-                row["ticker"].upper(): int(row["cik_str"])
-                for row in resp.json().values()
+                row["ticker"].upper(): int(row["cik_str"]) for row in resp.json().values()
             }
         return self._ticker_to_cik
 
@@ -120,6 +122,7 @@ class EdgarProvider(FundamentalProvider):
                     value = entry.get("val")
                     if end is None or filed is None or value is None:
                         continue
+                    start_raw = entry.get("start")
                     facts.append(
                         FundamentalFact(
                             ticker=ticker.upper(),
@@ -129,6 +132,7 @@ class EdgarProvider(FundamentalProvider):
                             fiscal_end=date.fromisoformat(end),
                             known_on=date.fromisoformat(filed),
                             form=entry.get("form", ""),
+                            period_start=(date.fromisoformat(start_raw) if start_raw else None),
                         )
                     )
 

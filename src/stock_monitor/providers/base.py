@@ -36,6 +36,9 @@ class FundamentalFact:
         fiscal_end: End date of the fiscal period the value describes.
         known_on: Date the fact became public (SEC filing date). PIT guarantee.
         form: Filing form type (e.g. ``10-K``, ``10-Q``).
+        period_start: Start date of the fiscal period, when the source reports it
+            (EDGAR companyfacts entries for duration concepts carry ``start``).
+            ``None`` for instant concepts (balance-sheet snapshots) or legacy data.
     """
 
     ticker: str
@@ -45,6 +48,7 @@ class FundamentalFact:
     fiscal_end: dt.date
     known_on: dt.date
     form: str
+    period_start: dt.date | None = None
 
 
 class PriceProvider(ABC):

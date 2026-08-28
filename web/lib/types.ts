@@ -157,6 +157,51 @@ export interface BasketLeg {
   contribution_points?: number | null;
 }
 
+export interface BriefAllocation {
+  ticker: string;
+  target_pct: number;
+  current_pct: number;
+  delta_pct: number;
+  conviction: number;
+  reasons: string[];
+}
+
+export interface BriefContext {
+  as_of: string;
+  total_value: number;
+  cash_pct: number;
+  allocations: BriefAllocation[];
+  warnings: string[];
+  unpriceable_positions?: string[];
+}
+
+export interface BriefResponse {
+  as_of: string;
+  context: BriefContext;
+  brief: string | null;
+  model: string | null;
+  llm_available: boolean;
+  note: string | null;
+  cached: boolean;
+}
+
+export interface ReviewOpinion {
+  ticker: string;
+  opinion: "BUY" | "HOLD" | "SELL";
+  confidence: string;
+  rationale: string;
+  key_risks: string[];
+  model: string;
+  disclaimer: string;
+  cached?: boolean;
+}
+
+export interface ReviewResponse {
+  ticker: string;
+  opinion: ReviewOpinion | null;
+  note: string | null;
+}
+
 export interface BasketView {
   id: string;
   name: string;

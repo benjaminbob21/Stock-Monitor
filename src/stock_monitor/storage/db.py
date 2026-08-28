@@ -175,10 +175,12 @@ CREATE TABLE IF NOT EXISTS news_articles (
     PRIMARY KEY (ticker, published, headline)
 );
 
--- Alternative-sentiment layer (Reddit + financial-media RSS), approved 2026-08-27.
--- ``alt_posts`` is the re-scorable raw archive; ``alt_sentiment`` is the daily
--- engagement-weighted aggregate the allocation engine consumes. Reddit is optional
--- (OAuth creds in .env); RSS works without any key.
+-- Alternative-sentiment layer (Reddit + financial-media RSS; LLM-reader design,
+-- approved 2026-08-28). ``alt_posts`` is the raw audit archive; ``alt_sentiment``
+-- holds the LLM's per-ticker verdicts. The DROP guards against the older
+-- FinBERT-era schema (different PK shape); batches are cheap to re-run.
+DROP TABLE IF EXISTS alt_posts;
+DROP TABLE IF EXISTS alt_sentiment;
 CREATE TABLE IF NOT EXISTS alt_posts (
     published TIMESTAMP,
     headline VARCHAR NOT NULL,

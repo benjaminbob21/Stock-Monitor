@@ -262,7 +262,11 @@ def _aggregate_daily(frame: pd.DataFrame) -> pd.DataFrame:
     neutral by convention, same as news).
     """
     f = frame.copy()
-    f["date"] = pd.to_datetime(f["published"]).dt.date
+    f["date"] = pd.to_datetime(f["published"], errors="coerce").dt.date
+    # Undated rows can't anchor a daily aggregate (same rule as news articles).
+    f = f.dropna(subset=["date", "sentiment"])
+    if f.empty:
+        return pd.DataFrame(columns=["ticker", "date", "sentiment", "post_count", "backend"])
     f["weight"] = f["engagement"].clip(lower=0).to_numpy() + 1.0
     grouped = f.groupby("ticker", as_index=False).apply(
         lambda g: pd.Series(

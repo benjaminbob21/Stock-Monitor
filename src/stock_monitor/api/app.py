@@ -1045,6 +1045,63 @@ def allocation_endpoint(
     return plan_to_json(plan, diagnostics)
 
 
+@app.get("/brief")
+def brief_endpoint(state: StateDep, budget: float | None = None) -> dict[str, object]:
+    """Daily LLM-narrated portfolio brief (opt-in, cached per calendar day).
+
+    The engine produces the plan; the LLM only narrates the already-computed
+    numbers (never generates its own). One OpenRouter call per day; page
+    refreshes hit the cache. ``budget`` (optional, $) overrides total value.
+    """
+    from stock_monitor.brief import portfolio_brief
+
+    _require_ready(state)
+    if budget is not None and budget <= 0:
+        raise HTTPException(status_code=422, detail="budget must be positive")
+    settings = get_settings()
+    try:
+        with Storage(state.db_path) as store:  # type: ignore[arg-type]
+            return portfolio_brief(
+                store, state.price_provider, total_value=budget, settings=settings
+            )
+    except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+        raise HTTPException(status_code=500, detail=f"brief failed: {exc}") from exc
+
+
+@app.post("/review/{ticker}")
+def review_endpoint(ticker: str, state: StateDep) -> dict[str, object]:
+    """Per-stock LLM review (opt-in; cached 1/hour to cap token spend).
+
+    Reuses the exact score payload shown on the stock page — never re-scores —
+    and asks the LLM for a BUY/HOLD/SELL read to weigh against the model.
+    """
+    from stock_monitor.brief import ticker_review
+
+    _require_ready(state)
+    settings = get_settings()
+    upper = ticker.upper()
+    if not settings.llm_analyst_enabled or not settings.openrouter_api_key:
+        return {
+            "ticker": upper,
+            "opinion": None,
+            "note": "AI review disabled — set LLM_ANALYST_ENABLED=1 and OPEN_ROUTER_API_KEY.",
+        }
+
+    # Reuse the cached score if present (same payload the UI already shows).
+    with Storage(state.db_path) as store:  # type: ignore[arg-type]
+        recent = store.read_recent_scores(within_days=3)
+    match = next((r for r in recent if r.get("ticker") == upper), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"no recent score for {upper}")
+
+    opinion = ticker_review(match, settings)
+    return {
+        "ticker": upper,
+        "opinion": opinion,
+        "note": None if opinion else "AI review unavailable (LLM call failed).",
+    }
+
+
 @app.get("/baskets")
 def list_baskets_endpoint(state: StateDep) -> dict[str, object]:
     """All joint portfolios, valued as a whole (headline P&L + contributions)."""

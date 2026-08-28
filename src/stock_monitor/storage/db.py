@@ -623,7 +623,7 @@ class Storage:
         rows = self._con.execute(
             """
             SELECT s.ticker, s.as_of, s.conviction, s.recommendation,
-                   s.risk_flags, s.model_version
+                   s.risk_flags, s.model_version, s.drivers
             FROM scores s
             WHERE s.as_of >= current_date - ? * INTERVAL '1' DAY
               AND s.scored_at = (
@@ -641,6 +641,7 @@ class Storage:
                 "recommendation": r[3],
                 "risk_flags": json.loads(r[4]) if r[4] else [],
                 "model_version": r[5],
+                "drivers": json.loads(r[6]) if r[6] else [],
             }
             for r in rows
         ]

@@ -64,23 +64,30 @@ def dcf_concepts() -> tuple[str, ...]:
 def _annual_series(
     facts: Sequence[FundamentalFact], concept: str, as_of: dt.date
 ) -> YearSeries:
-    """Latest-known value per fiscal year for ``concept``, oldest first (PIT-safe).
+    """Latest-known annual value per fiscal year for ``concept``, oldest first.
 
-    Only annual facts qualify (period >= 300 days ≈ a 10-K) so quarterly noise
-    never fakes a trend.
+    PIT-safe: only facts with ``known_on <= as_of`` qualify. Annual facts are
+    identified by ``form == 10-K`` when present; without form info the
+    Jan-1-distance heuristic is the fallback, and among same-year facts the
+    largest absolute value wins so a FY total beats its trailing sub-periods.
     """
     best: dict[int, FundamentalFact] = {}
+    has_form = any(f.form for f in facts)
     for fact in facts:
         if fact.concept != concept or fact.known_on > as_of:
             continue
-        jan1 = fact.fiscal_end.replace(month=1, day=1)
-        if (fact.fiscal_end - jan1).days < 300:
-            continue
+        if has_form:
+            if fact.form != "10-K":
+                continue
+        else:
+            jan1 = fact.fiscal_end.replace(month=1, day=1)
+            if (fact.fiscal_end - jan1).days < 300:
+                continue
         year = fact.fiscal_end.year
         prior = best.get(year)
-        if prior is None or (fact.fiscal_end, fact.known_on) > (
-            prior.fiscal_end, prior.known_on
-        ):
+        # A trailing ~9-month total is smaller in magnitude than the full FY,
+        # so prefer the largest |value| when several facts share a fiscal year.
+        if prior is None or abs(fact.value) >= abs(prior.value):
             best[year] = fact
     return sorted((int(year), float(fact.value)) for year, fact in best.items())
 

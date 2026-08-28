@@ -176,6 +176,14 @@ class Settings(BaseSettings):
     # Hour to collect + archive today's news (default just before the scan, so the
     # sentiment feature is fresh). Runs daily so we never lose a day of headlines.
     news_collect_hour: int = 21
+    # Hour to collect alt-sentiment (Reddit + media RSS) — one batched daily job.
+    # Reddit needs REDDIT_CLIENT_ID/SECRET (personal-use script app, free); RSS
+    # collects even without them.
+    alt_sentiment_hour: int = 20
+    alt_sentiment_enabled: bool = True
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_user_agent: str = "stock-monitor/1.0 (personal portfolio tool)"
     heartbeat_max_age_hours: int = 26  # alert if no successful scan within this window
     # Run the scheduler in-process with the API (set True in production/containers).
     run_scheduler: bool = False

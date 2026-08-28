@@ -175,6 +175,33 @@ CREATE TABLE IF NOT EXISTS news_articles (
     PRIMARY KEY (ticker, published, headline)
 );
 
+-- Alternative-sentiment layer (Reddit + financial-media RSS), approved 2026-08-27.
+-- ``alt_posts`` is the re-scorable raw archive; ``alt_sentiment`` is the daily
+-- engagement-weighted aggregate the allocation engine consumes. Reddit is optional
+-- (OAuth creds in .env); RSS works without any key.
+CREATE TABLE IF NOT EXISTS alt_posts (
+    ticker VARCHAR NOT NULL,
+    published TIMESTAMP,
+    headline VARCHAR NOT NULL,
+    source VARCHAR,
+    url VARCHAR,
+    sentiment DOUBLE,
+    backend VARCHAR,
+    engagement INTEGER DEFAULT 0,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (ticker, url, headline)
+);
+
+CREATE TABLE IF NOT EXISTS alt_sentiment (
+    ticker VARCHAR NOT NULL,
+    date DATE NOT NULL,
+    sentiment DOUBLE,
+    post_count INTEGER,
+    backend VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (ticker, date)
+);
+
 CREATE TABLE IF NOT EXISTS news_backfill_state (
     provider VARCHAR NOT NULL,
     ticker VARCHAR NOT NULL,
@@ -701,6 +728,76 @@ class Storage:
         finally:
             self._con.unregister("_articles_tmp")
         return int(len(frame))
+
+    def upsert_alt_posts(self, df: pd.DataFrame) -> int:
+        """Upsert raw alt-sentiment posts (Reddit/RSS archive). Returns rows written.
+
+        Expected columns: ``ticker``, ``published`` (nullable), ``headline``,
+        ``source``, ``url``, ``sentiment``, ``backend``, ``engagement``.
+        Idempotent on (ticker, url, headline); rows without a URL are dropped since
+        the URL anchors the permanent key.
+        """
+        if df is None or df.empty:
+            return 0
+        cols = [
+            "ticker", "published", "headline", "source",
+            "url", "sentiment", "backend", "engagement",
+        ]
+        frame = df[cols].copy().dropna(subset=["url", "headline"])
+        if frame.empty:
+            return 0
+        self._con.register("_alt_tmp", frame)
+        try:
+            self._con.execute(
+                """
+                INSERT INTO alt_posts
+                    (ticker, published, headline, source, url, sentiment, backend, engagement)
+                SELECT ticker, published, headline, source, url, sentiment, backend, engagement
+                FROM _alt_tmp
+                ON CONFLICT (ticker, url, headline) DO UPDATE SET
+                    sentiment = excluded.sentiment,
+                    engagement = excluded.engagement,
+                    backend = excluded.backend
+                """
+            )
+        finally:
+            self._con.unregister("_alt_tmp")
+        return int(len(frame))
+
+    def upsert_alt_sentiment(self, df: pd.DataFrame) -> int:
+        """Upsert daily per-ticker alt-sentiment aggregate. Returns rows written.
+
+        Expected columns: ``ticker``, ``date``, ``sentiment``, ``post_count``,
+        ``backend``. Idempotent on (ticker, date).
+        """
+        if df is None or df.empty:
+            return 0
+        cols = ["ticker", "date", "sentiment", "post_count", "backend"]
+        frame = df[cols].copy()
+        self._con.register("_alt_sent_tmp", frame)
+        try:
+            self._con.execute(
+                """
+                INSERT INTO alt_sentiment (ticker, date, sentiment, post_count, backend)
+                SELECT ticker, date, sentiment, post_count, backend FROM _alt_sent_tmp
+                ON CONFLICT (ticker, date) DO UPDATE SET
+                    sentiment = excluded.sentiment,
+                    post_count = excluded.post_count,
+                    backend = excluded.backend
+                """
+            )
+        finally:
+            self._con.unregister("_alt_sent_tmp")
+        return int(len(frame))
+
+    def read_alt_sentiment(self, ticker: str | None = None) -> pd.DataFrame:
+        """Return stored daily alt-sentiment, optionally for a single ticker."""
+        if ticker:
+            return self._con.execute(
+                "SELECT * FROM alt_sentiment WHERE ticker = ? ORDER BY date",
+                [ticker.upper()],
+            ).df()
+        return self._con.execute("SELECT * FROM alt_sentiment ORDER BY ticker, date").df()
 
     def read_news_articles(self, ticker: str | None = None) -> pd.DataFrame:
         """Return stored raw headlines, optionally for a single ticker (newest first)."""

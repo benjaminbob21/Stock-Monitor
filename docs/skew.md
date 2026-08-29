@@ -76,3 +76,43 @@ stock-monitor skew report
 # Export snapshot to CSV
 stock-monitor skew export --output data/skew_report.csv
 ```
+
+## 6. Research and Portfolio-Review Integration
+
+The skew map is a **positioning and context layer**, not an intrinsic-value model, entry trigger, price target, or automatic exit rule. It should be joined to the daily evidence brief only after freshness and quality checks:
+
+1. **Validate the record:** timestamp, quote age, bid/ask width, open interest, zero bids, IV bounds, and sanity status.
+2. **Separate event premium:** compare the selected expiration with the earnings/catalyst calendar. Front-cycle IV around an event is not structural fear or optimism.
+3. **Use independent benchmarks:** compare each stock with SPY and its sector benchmark ETF. Keep benchmark ETFs out of the individual-equity candidate list; they are reference instruments only.
+4. **Use both level and change:** normalized skew supports within-name/within-sector comparison, while raw vol points and sector-relative rank provide context. The level is structural; day/week change and quadrant migration are the signal.
+5. **Require breadth:** do not describe a whole sector as hedged or bullish from one outlier. Report the percentage of tracked names agreeing with the sector direction.
+6. **Combine evidence without double-counting:** fundamentals/filings, valuation, earnings, dated news, price trend, sentiment, model conviction, and skew must remain separate evidence categories. Reddit and options positioning describe sentiment/positioning, not business value.
+
+For an existing long, the review should read as follows:
+
+- **Hedged Rally:** investigate rising protection demand and tighten risk controls only if the fundamental thesis or price trend also weakens.
+- **Fear:** audit the thesis, earnings, balance sheet, and news; do not sell solely because skew is positive.
+- **Chase:** discourage a new long entry unless valuation, catalyst, and risk/reward independently justify it.
+- **Contrarian Bid:** promote to research/watchlist status; require a catalyst, technical confirmation, and acceptable valuation before considering an allocation.
+
+### Daily “How are things looking?” contract
+
+A future brief should fetch fresh data and label every section with its timestamp/source:
+
+- Account value, buying power, and current equity positions (Robinhood).
+- Quote, official close, performance, valuation, financials, earnings, and tradability (Robinhood/SEC).
+- New company and macro news with publication dates (major outlets and primary filings).
+- Reddit discussion from multiple relevant communities, explicitly labeled sentiment.
+- Stock-Monitor conviction, risk flags, model drivers, and validation/scorecard status.
+- Skew quadrant, raw/normalized skew, sector rank/agreement, quality flags, earnings warning, and recent change.
+- A confluence table showing agreement, conflict, missing data, and confidence for each holding or candidate.
+
+The deterministic model and data-quality checks remain the signal of record. Any LLM narration is explanatory only. The brief must say when Stock-Monitor or a private Oracle VM was not reachable, rather than implying that data was retrieved.
+
+## 7. Limitations and Guardrails
+
+- Normalization does not eliminate cross-sector distortion: low-IV sectors can rank artificially high. Preserve raw skew and sector-relative measures.
+- Index put/call ratios are not a substitute for delta-matched single-name skew; deep-tail open interest can dominate the ratio.
+- A narrow sector move may be only one or two stocks “wearing a costume.” Track breadth before inferring rotation.
+- Stale or wide options quotes can invert the signal. Reject or prominently warn instead of silently dropping bad records.
+- Skew supplies **where to research**, not **when to trade**. Timing still requires price/technical analysis, liquidity, catalyst review, and explicit human approval.

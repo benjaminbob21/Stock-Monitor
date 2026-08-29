@@ -179,6 +179,43 @@ SECTOR_MAP: dict[str, str] = {
     "TSM": "Technology",  # TSMC — semiconductor foundry (ADR)
     "PLTR": "Technology",  # Palantir — data analytics / AI software
     "MRNA": "Health Care",  # Moderna — biotech / mRNA therapeutics
+    # Trending / NVDA-ecosystem additions
+    "SMCI": "Technology",  # Super Micro — AI servers
+    "DELL": "Technology",  # Dell — AI servers / infrastructure
+    "ANET": "Technology",  # Arista — data-center networking
+    "COHR": "Technology",  # Coherent — optical transceivers
+    "ALAB": "Technology",  # Astera Labs — AI connectivity chips
+    "CRDO": "Technology",  # Credo — high-speed connectivity
+    "GLW": "Technology",  # Corning — optical fiber / data-center cabling
+    "CRWD": "Technology",  # CrowdStrike — cybersecurity
+    "ZS": "Technology",  # Zscaler — cloud security
+    "NET": "Technology",  # Cloudflare — edge network
+    "DDOG": "Technology",  # Datadog — observability
+    "SNOW": "Technology",  # Snowflake — data cloud
+    "MDB": "Technology",  # MongoDB — database platform
+    "ARM": "Technology",  # Arm Holdings — chip IP
+    "HOOD": "Financials",  # Robinhood — retail brokerage
+    "COIN": "Financials",  # Coinbase — crypto exchange
+    "MSTR": "Financials",  # Strategy (MicroStrategy) — bitcoin treasury
+    "AFRM": "Financials",  # Affirm — BNPL fintech
+    "PYPL": "Financials",  # PayPal — digital payments
+    "SPOT": "Communication Services",  # Spotify — audio streaming
+    "RBLX": "Communication Services",  # Roblox — gaming / UGC
+    "PINS": "Communication Services",  # Pinterest — social discovery
+    "SNAP": "Communication Services",  # Snap — social media
+    "DASH": "Consumer Discretionary",  # DoorDash — delivery
+    "SHOP": "Consumer Discretionary",  # Shopify — e-commerce
+    "RKLB": "Industrials",  # Rocket Lab — space launch
+    "ASTS": "Technology",  # AST SpaceMobile — satellite direct-to-cell
+    "TEM": "Health Care",  # Tempus AI — health data / AI diagnostics
+    "SOUN": "Technology",  # SoundHound — voice AI
+    "SERV": "Technology",  # Serve Robotics — autonomous delivery
+    "IONQ": "Technology",  # IonQ — quantum computing
+    "RGTI": "Technology",  # Rigetti — quantum computing
+    "VST": "Utilities",  # Vistra — power (data-center demand)
+    "CEG": "Utilities",  # Constellation — nuclear power
+    "TLN": "Utilities",  # Talen Energy — nuclear-adjacent data-center power
+    "OKLO": "Utilities",  # Oklo — advanced nuclear
 }
 
 

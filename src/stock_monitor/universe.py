@@ -22,14 +22,21 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AVGO", "ADBE", "CRM", "ORCL", "CSCO", "NOW",
     # Semiconductors (beyond the mega-caps)
     "AMD", "MU", "QCOM", "TXN", "TSM",
+    # AI infrastructure & NVDA supply chain (networking, optics, servers, power)
+    "SMCI", "DELL", "ANET", "COHR", "ALAB", "CRDO", "GLW", "IBM",
     # Cybersecurity / software
-    "PANW", "PLTR",
+    "PANW", "PLTR", "CRWD", "ZS", "NET", "DDOG", "SNOW", "MDB", "ARM",
     # Consumer
     "AMZN", "TSLA", "HD", "MCD", "NKE", "KO", "PEP", "COST", "WMT",
     # Consumer-internet / mobility
     "UBER", "ABNB",
     # User watchlist: high-growth / momentum names (options-active)
     "BE", "VRT", "NBIS", "APP", "RDDT", "HIMS", "SOFI", "ZETA",
+    # Trending retail favorites: fintech, crypto, space, consumer platforms
+    "HOOD", "COIN", "MSTR", "AFRM", "PYPL", "SPOT", "RBLX", "PINS", "SNAP", "DASH", "SHOP",
+    "RKLB", "ASTS", "TEM", "SOUN", "SERV", "IONQ", "RGTI",
+    # Power / utilities riding data-center demand
+    "VST", "CEG", "TLN", "OKLO",
     # Financials
     "JPM", "BAC", "V", "MA", "GS",
     # Health / biotech / medtech

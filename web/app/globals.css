@@ -64,6 +64,8 @@
 
   /* App canvas width — grows on larger viewports (see media queries). */
   --app-max: 480px;
+  --app-max-tablet: 760px;
+  --app-max-desktop: 1120px;
 }
 
 * {
@@ -1343,10 +1345,14 @@ body.sheet-open {
   padding: 12px 16px calc(env(safe-area-inset-bottom) + 24px);
 }
 
-/* On wider screens present the app as a tidy, centred phone-style canvas —
-   this is a mobile-first installed PWA, so we keep the focused single column
-   and just frame it handsomely instead of stretching into a dashboard. */
-@media (min-width: 520px) {
+/* ---- Responsive escalation: phone → tablet → desktop ----------------------
+   Mobile-first single column; wider viewports widen the canvas, switch the
+   bottom nav to a side rail, and let dashboard grids breathe. */
+@media (min-width: 700px) {
+  :root {
+    --app-max: var(--app-max-tablet);
+  }
+
   .app-shell {
     margin-top: 24px;
     margin-bottom: 24px;
@@ -1360,6 +1366,25 @@ body.sheet-open {
   /* Keep the fixed nav aligned to the framed canvas. */
   .bottomnav {
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+
+  .tabpanel {
+    padding-inline: 24px;
+  }
+}
+
+@media (min-width: 1100px) {
+  :root {
+    --app-max: var(--app-max-desktop);
+  }
+
+  .app-shell {
+    margin-top: 28px;
+    margin-bottom: 28px;
+  }
+
+  .tabpanel {
+    padding-inline: 32px;
   }
 }
 
@@ -2443,7 +2468,7 @@ body.sheet-open {
 }
 .dcfform {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   gap: 10px;
   margin-top: 6px;
 }
@@ -2471,4 +2496,593 @@ body.sheet-open {
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* ==========================================================================
+   Options Skew Map — quadrant dashboard
+   Responsive: single column on phones, 2-across quadrant cards on ≥700px,
+   4-across + roomy map on ≥1100px.
+   ========================================================================== */
+.skew {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.skew-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skew-head-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skew-asof {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: var(--font-mono);
+}
+
+.skew-head-info p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The quadrant map is built for width — on phones, nudge users to a monitor. */
+.skew-head-info .skew-desktop-hint {
+  color: var(--caution);
+}
+
+@media (min-width: 700px) {
+  .skew-desktop-hint {
+    display: none;
+  }
+}
+
+.skew-scanmsg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+
+.skew-scanmsg button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* ---- Quadrant filter cards ---------------------------------------------- */
+.skew-quads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 700px) {
+  .skew-quads {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.skew-quad {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.08s ease;
+}
+
+.skew-quad:hover {
+  border-color: var(--border-strong);
+}
+
+.skew-quad:active {
+  transform: scale(0.98);
+}
+
+.skew-quad.selected {
+  border-color: var(--q-color, var(--accent));
+  background: color-mix(in srgb, var(--q-color, var(--accent)) 10%, var(--panel));
+  box-shadow: 0 0 0 1px var(--q-color, var(--accent));
+}
+
+.skew-quad-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skew-quad-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--q-color, var(--text));
+}
+
+.skew-quad-count {
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--q-color, var(--text-strong));
+}
+
+.skew-quad-sub {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* ---- Sub-tab bar --------------------------------------------------------- */
+.skew-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.skew-tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.skew-tab:hover {
+  color: var(--text);
+}
+
+.skew-tab.active {
+  color: var(--text-strong);
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  padding: 6px 10px;
+}
+
+/* ---- 2D quadrant map ------------------------------------------------------ */
+.skew-plot {
+  position: relative;
+  width: 100%;
+  height: min(72vh, 620px);
+  min-height: 380px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 200px),
+    var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.skew-plot-label {
+  position: absolute;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--q-color, var(--muted));
+  opacity: 0.55;
+  pointer-events: none;
+  max-width: 45%;
+  line-height: 1.3;
+}
+
+.skew-plot-label.tl {
+  top: 10px;
+  left: 12px;
+}
+
+.skew-plot-label.tr {
+  top: 10px;
+  right: 12px;
+  text-align: right;
+}
+
+.skew-plot-label.bl {
+  bottom: 10px;
+  left: 12px;
+}
+
+.skew-plot-label.br {
+  bottom: 10px;
+  right: 12px;
+  text-align: right;
+}
+
+.skew-axis-v {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px dashed var(--border-strong);
+  pointer-events: none;
+}
+
+.skew-axis-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px dashed var(--border-strong);
+  pointer-events: none;
+}
+
+.skew-axis-note {
+  position: absolute;
+  font-size: 10px;
+  color: var(--faint);
+  pointer-events: none;
+  font-family: var(--font-mono);
+}
+
+.skew-dot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.skew-dot-core {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--q-color, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-color, var(--accent)) 30%, transparent);
+  transition: transform 0.12s ease;
+}
+
+.skew-dot:hover .skew-dot-core,
+.skew-dot:focus-visible .skew-dot-core {
+  transform: scale(1.7);
+}
+
+.skew-dot-ticker {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Tap-friendly tooltip: shown on hover AND when a dot is tapped (focus). */
+.skew-tip {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  min-width: 190px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  pointer-events: none;
+}
+
+.skew-dot:hover .skew-tip,
+.skew-dot:focus-visible .skew-tip {
+  display: block;
+}
+
+/* Dots near the bottom would clip — flip their tooltip above. */
+.skew-dot.flip-tip .skew-tip {
+  bottom: auto;
+  top: 18px;
+}
+
+.skew-tip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.skew-tip-head span:last-child {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.skew-tip-row {
+  font-size: 11px;
+  color: var(--text);
+  margin-top: 3px;
+}
+
+.skew-tip-row .up {
+  color: var(--green);
+  font-family: var(--font-mono);
+}
+
+.skew-tip-row .down {
+  color: var(--red);
+  font-family: var(--font-mono);
+}
+
+.skew-tip-row .mono {
+  font-family: var(--font-mono);
+  color: var(--teal);
+}
+
+/* ---- Filter row + tables -------------------------------------------------- */
+.skew-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.skew-select {
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+}
+
+.skew-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.skew-tablewrap {
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.skew-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.skew-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.skew-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  vertical-align: middle;
+}
+
+.skew-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.skew-table tbody tr.rowlink {
+  cursor: pointer;
+}
+
+.skew-table tbody tr.rowlink:hover {
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+}
+
+.skew-tk {
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-strong);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skew-er {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--orange);
+  border: 1px solid color-mix(in srgb, var(--orange) 55%, transparent);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.skew-sec {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.skew-mono {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.skew-up {
+  color: var(--green);
+}
+
+.skew-down {
+  color: var(--red);
+}
+
+.skew-teal {
+  color: var(--teal);
+}
+
+.skew-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  color: var(--q-color, var(--text));
+  background: color-mix(in srgb, var(--q-color, var(--accent)) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--q-color, var(--accent)) 45%, transparent);
+}
+
+.skew-verdict {
+  color: var(--text);
+  font-size: 12px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 1100px) {
+  .skew-verdict {
+    max-width: 560px;
+  }
+}
+
+.skew-agree {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skew-agree-track {
+  width: 64px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  overflow: hidden;
+  flex: none;
+}
+
+.skew-agree-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.skew-shift {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.skew-shift .was {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.skew-shift .arrow {
+  color: var(--muted);
+}
+
+.skew-shift .now {
+  font-weight: 700;
+  color: var(--green);
+}
+
+.skew-steady {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.skew-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---- Loading / error states ------------------------------------------------ */
+.skew-state {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.skew-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: skewspin 0.8s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes skewspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skew-error {
+  color: var(--red);
+  font-weight: 600;
+  margin-bottom: 12px;
 }

@@ -167,6 +167,15 @@ SECTOR_MAP: dict[str, str] = {
     "SHW": "Materials",
     "FCX": "Materials",
     "NEM": "Materials",
+    # User watchlist additions
+    "BE": "Industrials",  # Bloom Energy — fuel cells / power gen
+    "VRT": "Technology",  # Vertiv — data-center power & cooling
+    "NBIS": "Technology",  # Nebius — AI cloud infrastructure
+    "APP": "Technology",  # AppLovin — ad-tech / mobile
+    "RDDT": "Communication Services",  # Reddit — social media
+    "HIMS": "Health Care",  # Hims & Hers — telehealth
+    "SOFI": "Financials",  # SoFi — digital banking / fintech
+    "ZETA": "Technology",  # Zeta Global — marketing data/cloud
 }
 
 

@@ -28,6 +28,8 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     "AMZN", "TSLA", "HD", "MCD", "NKE", "KO", "PEP", "COST", "WMT",
     # Consumer-internet / mobility
     "UBER", "ABNB",
+    # User watchlist: high-growth / momentum names (options-active)
+    "BE", "VRT", "NBIS", "APP", "RDDT", "HIMS", "SOFI", "ZETA",
     # Financials
     "JPM", "BAC", "V", "MA", "GS",
     # Health / biotech / medtech

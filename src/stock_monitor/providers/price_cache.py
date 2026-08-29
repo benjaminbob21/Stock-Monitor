@@ -66,7 +66,10 @@ class PriceCache:
 
     def coverage(self, ticker: str) -> tuple[dt.date, dt.date] | None:
         """Return the cached ``(min_date, max_date)`` for a ticker, or ``None`` if empty."""
-        con = duckdb.connect(self._path, read_only=True)
+        # No read_only here on purpose: DuckDB refuses to open the same file with a
+        # different config than the read-write connections the API opens in one process,
+        # so every connection must use the default (read-write) config.
+        con = duckdb.connect(self._path)
         try:
             row = con.execute(
                 "SELECT min(date), max(date) FROM prices WHERE ticker = ?",
@@ -80,7 +83,7 @@ class PriceCache:
 
     def read(self, ticker: str, start: dt.date, end: dt.date) -> pd.DataFrame:
         """Return cached bars in ``[start, end]`` as the standard PriceProvider frame."""
-        con = duckdb.connect(self._path, read_only=True)
+        con = duckdb.connect(self._path)
         try:
             df = con.execute(
                 """
@@ -137,7 +140,7 @@ class PriceCache:
 
     def cached_tickers(self) -> list[str]:
         """Return the distinct tickers present in the cache."""
-        con = duckdb.connect(self._path, read_only=True)
+        con = duckdb.connect(self._path)
         try:
             rows = con.execute("SELECT DISTINCT ticker FROM prices ORDER BY ticker").fetchall()
         finally:

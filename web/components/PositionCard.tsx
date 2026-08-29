@@ -76,6 +76,7 @@ export function PositionCard({
   onLookup: (ticker: string) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const color = SIGNAL_COLORS[p.signal] ?? "var(--gray)";
   const sold = p.status === "sold";
   const priceColor =
@@ -103,36 +104,67 @@ export function PositionCard({
         >
           {p.signal}
         </span>
-        {!sold && (
-          <button className="sellbtn" onClick={() => onSell(p.id)}>
-            Mark sold
-          </button>
-        )}
-        {onDelete && confirmDelete ? (
-          <>
+        {(!sold || onDelete) && (
+          <div className="posmenu-wrap">
             <button
-              className="sellbtn delbtn"
-              onClick={() => {
-                setConfirmDelete(false);
-                onDelete(p.id);
-              }}
+              type="button"
+              className="sellbtn posmenu-btn"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label={`${p.ticker} actions`}
             >
-              Confirm delete
+              ⋯
             </button>
-            <button className="sellbtn" onClick={() => setConfirmDelete(false)}>
-              Keep
-            </button>
-          </>
-        ) : (
-          onDelete && (
-            <button
-              className="sellbtn delbtn"
-              onClick={() => setConfirmDelete(true)}
-              aria-label={`Delete ${p.ticker} from portfolio`}
-            >
-              Delete
-            </button>
-          )
+            {menuOpen && (
+              <div className="posmenu" role="menu">
+                {!sold && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onSell(p.id);
+                    }}
+                  >
+                    Mark sold
+                  </button>
+                )}
+                {onDelete &&
+                  (confirmDelete ? (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="posmenu-danger"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onDelete(p.id);
+                        }}
+                      >
+                        Confirm delete
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        Keep
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="posmenu-danger"
+                      onClick={() => setConfirmDelete(true)}
+                    >
+                      Delete…
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -1136,6 +1136,61 @@ body.sheet-open {
   background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 
+/* Overflow menu hiding destructive actions (Mark sold / Delete) behind a
+   "⋯" button so scrolling past cards can't trigger them by accident. */
+.posmenu-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.posmenu-btn {
+  min-width: 40px;
+  padding: 6px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.posmenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  min-width: 160px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.posmenu button {
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text, #eee);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.posmenu button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.posmenu button.posmenu-danger {
+  color: var(--red);
+}
+
+.posmenu button.posmenu-danger:hover {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
 .posgrid {
   display: flex;
   flex-wrap: wrap;

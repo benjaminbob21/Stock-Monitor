@@ -33,7 +33,7 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     # Financials
     "JPM", "BAC", "V", "MA", "GS",
     # Health / biotech / medtech
-    "UNH", "JNJ", "LLY", "PFE", "ISRG", "VRTX", "REGN",
+    "UNH", "JNJ", "LLY", "PFE", "ISRG", "VRTX", "REGN", "MRNA",
     # Energy / industrial / energy-transition
     "XOM", "CVX", "CAT", "DE", "GE", "ENPH",
     # Income / REIT / utility

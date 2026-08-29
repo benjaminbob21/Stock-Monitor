@@ -178,6 +178,7 @@ SECTOR_MAP: dict[str, str] = {
     "ZETA": "Technology",  # Zeta Global — marketing data/cloud
     "TSM": "Technology",  # TSMC — semiconductor foundry (ADR)
     "PLTR": "Technology",  # Palantir — data analytics / AI software
+    "MRNA": "Health Care",  # Moderna — biotech / mRNA therapeutics
 }
 
 

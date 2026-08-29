@@ -491,6 +491,24 @@ export default function Home() {
     [loadPositions],
   );
 
+  const deletePosition = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/positions/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          setPosNote("could not delete that position");
+          return;
+        }
+        await loadPositions();
+      } catch {
+        setPosNote("could not reach the scoring service");
+      }
+    },
+    [loadPositions],
+  );
+
   return (
     <div className="app-shell">
       <ServiceWorkerRegister />
@@ -668,6 +686,7 @@ export default function Home() {
                     key={p.id}
                     p={p}
                     onSell={sellPosition}
+                    onDelete={deletePosition}
                     onLookup={lookup}
                   />
                 ))}

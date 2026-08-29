@@ -1116,6 +1116,19 @@ def sell(position_id: str, state: StateDep) -> dict[str, object]:
     return view
 
 
+@app.delete("/positions/{position_id}")
+def delete_position(position_id: str, state: StateDep) -> dict[str, object]:
+    """Permanently remove a tracked position (open or sold) from the book."""
+    _require_ready(state)
+    with Storage(state.db_path) as store:  # type: ignore[arg-type]
+        if not store.delete_position(position_id):
+            raise HTTPException(status_code=404, detail="position not found")
+    from stock_monitor.positions import _invalidate_view_cache
+
+    _invalidate_view_cache()
+    return {"deleted": position_id}
+
+
 @app.get("/allocation")
 def allocation_endpoint(
     state: StateDep,

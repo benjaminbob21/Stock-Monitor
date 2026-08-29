@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { PositionView } from "@/lib/types";
 
 const SIGNAL_COLORS: Record<string, string> = {
@@ -65,12 +67,15 @@ function PLBar({ pct }: { pct: number }) {
 export function PositionCard({
   p,
   onSell,
+  onDelete,
   onLookup,
 }: {
   p: PositionView;
   onSell: (id: string) => void;
+  onDelete?: (id: string) => void;
   onLookup: (ticker: string) => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const color = SIGNAL_COLORS[p.signal] ?? "var(--gray)";
   const sold = p.status === "sold";
   const priceColor =
@@ -102,6 +107,32 @@ export function PositionCard({
           <button className="sellbtn" onClick={() => onSell(p.id)}>
             Mark sold
           </button>
+        )}
+        {onDelete && confirmDelete ? (
+          <>
+            <button
+              className="sellbtn delbtn"
+              onClick={() => {
+                setConfirmDelete(false);
+                onDelete(p.id);
+              }}
+            >
+              Confirm delete
+            </button>
+            <button className="sellbtn" onClick={() => setConfirmDelete(false)}>
+              Keep
+            </button>
+          </>
+        ) : (
+          onDelete && (
+            <button
+              className="sellbtn delbtn"
+              onClick={() => setConfirmDelete(true)}
+              aria-label={`Delete ${p.ticker} from portfolio`}
+            >
+              Delete
+            </button>
+          )
         )}
       </div>
 

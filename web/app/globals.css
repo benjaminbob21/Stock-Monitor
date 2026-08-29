@@ -1126,6 +1126,16 @@ body.sheet-open {
   color: var(--red);
 }
 
+.sellbtn.delbtn {
+  margin-left: 0;
+}
+
+.sellbtn.delbtn:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
 .posgrid {
   display: flex;
   flex-wrap: wrap;

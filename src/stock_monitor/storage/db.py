@@ -577,6 +577,14 @@ class Storage:
             [sold_at, sold_price, position_id],
         )
 
+    def delete_position(self, position_id: str) -> bool:
+        """Permanently remove a tracked position (open or sold)."""
+        deleted = self._con.execute(
+            "DELETE FROM positions WHERE id = ?",
+            [position_id],
+        ).fetchone()
+        return deleted is not None and deleted[0] > 0
+
     def record_run(
         self,
         job: str,

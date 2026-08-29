@@ -140,3 +140,37 @@ def test_compute_skew_metrics_full() -> None:
     assert metrics.normalized_skew > 0
     assert metrics.quadrant == "Fear"  # down 1M + puts bid
     assert metrics.sanity_passed is True
+
+
+def test_thin_chain_flag() -> None:
+    """Trap #4: few strikes or tiny open interest => thin_chain=True (show, don't trust)."""
+    strikes = [80.0, 85.0, 90.0, 95.0, 100.0, 105.0, 110.0, 115.0, 120.0]
+    call_ivs = {s: 0.22 for s in strikes}
+    put_ivs = {s: 0.28 for s in strikes}
+
+    healthy = compute_skew_metrics(
+        spot=100.0, strikes=strikes, call_ivs=call_ivs, put_ivs=put_ivs,
+        dte_days=30, ret_1m=-0.03, total_open_interest=50_000.0,
+    )
+    assert healthy is not None
+    assert healthy.thin_chain is False
+
+    # Too few usable strikes
+    thin = compute_skew_metrics(
+        spot=100.0,
+        strikes=[95.0, 100.0, 105.0],
+        call_ivs={95.0: 0.22, 100.0: 0.22, 105.0: 0.22},
+        put_ivs={95.0: 0.28, 100.0: 0.28, 105.0: 0.28},
+        dte_days=30,
+        ret_1m=-0.03,
+    )
+    assert thin is not None
+    assert thin.thin_chain is True
+
+    # Rich chain but negligible open interest
+    no_oi = compute_skew_metrics(
+        spot=100.0, strikes=strikes, call_ivs=call_ivs, put_ivs=put_ivs,
+        dte_days=30, ret_1m=-0.03, total_open_interest=42.0,
+    )
+    assert no_oi is not None
+    assert no_oi.thin_chain is True

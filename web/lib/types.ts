@@ -164,6 +164,9 @@ export interface SkewRecordView {
   sector_avg_norm_skew: number;
   sector_agreement: number;
   verdict: string;
+  ret_1d: number;
+  ret_1w: number;
+  thin_chain: boolean;
 }
 
 export interface SkewSectorSummary {

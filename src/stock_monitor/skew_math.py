@@ -210,6 +210,7 @@ class SkewMetrics:
     quadrant: QuadrantType
     sanity_passed: bool
     sanity_warning: str | None = None
+    thin_chain: bool = False
 
 
 def classify_quadrant(ret_1m: float, normalized_skew: float) -> QuadrantType:
@@ -238,8 +239,13 @@ def compute_skew_metrics(
     r: float = 0.045,
     q: float = 0.0,
     target_delta: float = 0.25,
+    total_open_interest: float = 0.0,
 ) -> SkewMetrics | None:
-    """Full computation of skew metrics and quadrant classification for one ticker."""
+    """Full computation of skew metrics and quadrant classification for one ticker.
+
+    ``total_open_interest`` enables the Trap #4 thin-chain check: a handful of
+    strikes or tiny open interest makes every number noise (show it, don't trust it).
+    """
     if spot <= 0 or dte_days <= 0 or len(strikes) < 3:
         return None
 
@@ -283,6 +289,10 @@ def compute_skew_metrics(
 
     quadrant = classify_quadrant(ret_1m, normalized_skew)
 
+    # Trap #4: thin chain — few usable strikes or tiny open interest = noise.
+    iv_strikes = [k for k in strikes if k in call_ivs or k in put_ivs]
+    thin_chain = len(iv_strikes) < 6 or total_open_interest < 500
+
     return SkewMetrics(
         spot=spot,
         atm_iv=atm_iv,
@@ -296,4 +306,5 @@ def compute_skew_metrics(
         quadrant=quadrant,
         sanity_passed=sanity_passed,
         sanity_warning=sanity_warning,
+        thin_chain=thin_chain,
     )

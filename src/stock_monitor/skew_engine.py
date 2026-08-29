@@ -47,6 +47,9 @@ class SkewRecord:
     sector_avg_norm_skew: float
     sector_agreement: float  # Percentage of names in sector sharing same skew lean (0.0 to 1.0)
     verdict: str
+    ret_1d: float = 0.0
+    ret_1w: float = 0.0
+    thin_chain: bool = False
 
 
 @dataclass
@@ -73,10 +76,19 @@ def build_verdict_sentence(
     earnings_date: str | None,
     sanity_passed: bool,
     sanity_warning: str | None,
+    rvol: float = 1.0,
+    thin_chain: bool = False,
 ) -> str:
     """Generate the fixed-format verdict sentence per Part 5 of the Skew Map method."""
     dir_str = "up" if ret_1m >= 0 else "down"
     ret_pct = abs(ret_1m) * 100.0
+
+    if rvol >= 1.5:
+        vol_desc = "heavy volume"
+    elif rvol < 0.7:
+        vol_desc = "light volume"
+    else:
+        vol_desc = "normal volume"
 
     if normalized_skew < 0:
         skew_desc = f"paying {abs(normalized_skew)*100.0:.1f}% more for upside calls"
@@ -95,12 +107,16 @@ def build_verdict_sentence(
     action = quad_actions.get(quadrant, "")
 
     sentence = (
-        f"{ticker} is {dir_str} {ret_pct:.1f}% over 30d (vs SPY {rel_ret_spy:+.1%}). "
+        f"{ticker} is {dir_str} {ret_pct:.1f}% over 30d (vs SPY {rel_ret_spy:+.1%}) "
+        f"on {vol_desc}. "
         f"Options traders are {skew_desc} (norm skew {normalized_skew:+.2f} "
         f"vs {sector} avg {sector_avg_norm_skew:+.2f}). "
         f"{sector} shows {sector_agreement:.0%} agreement. "
         f"[{quadrant}]: {action}"
     )
+
+    if thin_chain:
+        sentence += " [Thin chain — number unreliable, don't act on it]"
 
     if is_earnings_near:
         sentence += f" [Warning: Event premium near earnings ({earnings_date})]"
@@ -118,7 +134,7 @@ def process_skew_universe(
     q: float = 0.0,
 ) -> tuple[list[SkewRecord], dict[str, SectorSummary]]:
     """Process a universe of raw options chains into skew records and sector statistics."""
-    temp_records: list[tuple[RawChainData, SkewMetrics, str]] = []
+    temp_records: list[tuple[RawChainData, SkewMetrics, str, float]] = []
 
     for chain in chains:
         if chain.error or chain.spot <= 0 or not chain.strikes:
@@ -133,16 +149,17 @@ def process_skew_universe(
             ret_1m=chain.ret_1m,
             r=r,
             q=q,
+            total_open_interest=chain.total_open_interest(),
         )
 
         if metrics is not None:
             sector = get_ticker_sector(chain.ticker)
-            temp_records.append((chain, metrics, sector))
+            temp_records.append((chain, metrics, sector, chain.total_open_interest()))
 
     # Calculate sector statistics
     # Sector agreement = % of names matching dominant skew sign (positive vs negative)
     sector_groups: dict[str, list[SkewMetrics]] = {}
-    for _, m, sector in temp_records:
+    for _, m, sector, _oi in temp_records:
         sector_groups.setdefault(sector, []).append(m)
 
     sector_summaries: dict[str, SectorSummary] = {}
@@ -174,7 +191,7 @@ def process_skew_universe(
 
     # Build final SkewRecords
     final_records: list[SkewRecord] = []
-    for chain, metrics, sector in temp_records:
+    for chain, metrics, sector, _total_oi in temp_records:
         sec_sum = sector_summaries.get(
             sector,
             SectorSummary(
@@ -203,6 +220,8 @@ def process_skew_universe(
             earnings_date=chain.earnings_date,
             sanity_passed=metrics.sanity_passed,
             sanity_warning=metrics.sanity_warning,
+            rvol=chain.rvol,
+            thin_chain=metrics.thin_chain,
         )
 
         record = SkewRecord(
@@ -228,6 +247,9 @@ def process_skew_universe(
             sector_avg_norm_skew=sec_sum.avg_norm_skew,
             sector_agreement=sec_sum.agreement,
             verdict=verdict,
+            ret_1d=chain.ret_1d,
+            ret_1w=chain.ret_1w,
+            thin_chain=metrics.thin_chain,
         )
         final_records.append(record)
 

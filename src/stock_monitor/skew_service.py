@@ -90,6 +90,9 @@ class SkewService:
                         sector_avg_norm_skew=r["sector_avg_norm_skew"],
                         sector_agreement=r["sector_agreement"],
                         verdict=r["verdict"],
+                        ret_1d=r.get("ret_1d") or 0.0,
+                        ret_1w=r.get("ret_1w") or 0.0,
+                        thin_chain=bool(r.get("thin_chain") or False),
                     )
                     for r in existing
                 ]

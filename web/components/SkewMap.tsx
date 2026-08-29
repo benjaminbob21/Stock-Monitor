@@ -43,6 +43,22 @@ const QUAD_COLOR: Record<SkewQuadrant, string> = {
   Fear: "var(--red)",
 };
 
+// PDF Part 2 corner guidance — the one-line action per quadrant.
+const CORNER_GUIDANCE: Record<SkewQuadrant, string> = {
+  Fear: "avoid, don't short on news",
+  "Hedged Rally": "hold, but tighten stops",
+  "Contrarian Bid": "your watchlist",
+  Chase: "trend confirmed, but crowded",
+};
+
+type Horizon = "1D" | "1W" | "1M";
+
+const HORIZON_RET: Record<Horizon, (r: SkewRecordView) => number> = {
+  "1D": (r) => r.ret_1d ?? 0,
+  "1W": (r) => r.ret_1w ?? 0,
+  "1M": (r) => r.ret_1m,
+};
+
 type SubTab = "map" | "table" | "sectors" | "changes";
 
 const fmtPct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
@@ -59,6 +75,7 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
   const [activeTab, setActiveTab] = useState<SubTab>("map");
   const [scanBusy, setScanBusy] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [horizon, setHorizon] = useState<Horizon>("1M");
 
   const fetchSkewData = async () => {
     setLoading(true);
@@ -166,7 +183,7 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
             <span>Options Skew Map</span>
             <span className="skew-asof">{data?.date ? `As of ${data.date}` : "No date"}</span>
           </h2>
-          <p>OTM Put IV vs Call IV (25-Delta) mapped against 1-Month Return.</p>
+          <p>OTM Put IV vs Call IV (25-Delta) mapped against stock return. A where-to-look layer — not a buy list.</p>
           <p className="skew-desktop-hint">💡 This view is best on a larger screen (desktop/monitor).</p>
         </div>
         <button
@@ -235,22 +252,59 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
 
       {/* 1. 2D QUADRANT MAP */}
       {activeTab === "map" && (
-        <div className="skew-plot">
+        <>
+          {/* Horizon toggle — map re-plots per horizon; the ranked list stays month-anchored */}
+          <div className="skew-horizons" role="tablist" aria-label="Return horizon">
+            {(["1D", "1W", "1M"] as Horizon[]).map((h) => (
+              <button
+                key={h}
+                type="button"
+                role="tab"
+                aria-selected={horizon === h}
+                className={`skew-horizon ${horizon === h ? "active" : ""}`}
+                onClick={() => setHorizon(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+
+          <div className="skew-plot">
           <div className="skew-plot-label tl" style={{ "--q-color": "var(--red)" } as React.CSSProperties}>
             🛡️ FEAR (Down + Puts Bid)
+            <span className="skew-plot-guidance">{CORNER_GUIDANCE.Fear}</span>
           </div>
           <div className="skew-plot-label tr" style={{ "--q-color": "var(--teal)" } as React.CSSProperties}>
             📈 HEDGED RALLY (Up + Puts Bid)
+            <span className="skew-plot-guidance">{CORNER_GUIDANCE["Hedged Rally"]}</span>
           </div>
           <div className="skew-plot-label bl" style={{ "--q-color": "var(--green)" } as React.CSSProperties}>
             🎯 CONTRARIAN BID (Down + Calls Bid)
+            <span className="skew-plot-guidance">{CORNER_GUIDANCE["Contrarian Bid"]}</span>
           </div>
           <div className="skew-plot-label br" style={{ "--q-color": "var(--orange)" } as React.CSSProperties}>
             ⚠️ CHASE (Up + Calls Bid)
+            <span className="skew-plot-guidance">{CORNER_GUIDANCE.Chase}</span>
           </div>
 
           <div className="skew-axis-v" />
           <div className="skew-axis-h" />
+
+          {/* % gridlines — 25%-per-side return scale, ±0.50 norm-skew scale */}
+          {[-0.2, -0.1, 0.1, 0.2].map((v) => (
+            <div
+              key={`gx${v}`}
+              className="skew-grid skew-grid-v"
+              style={{ left: `${((v + 0.25) / 0.5) * 90 + 5}%` }}
+            />
+          ))}
+          {[-0.4, -0.3, -0.25, 0.25, 0.3, 0.4].map((v) => (
+            <div
+              key={`gy${v}`}
+              className="skew-grid skew-grid-h"
+              style={{ top: `${((0.5 - v) / 1.0) * 90 + 5}%` }}
+            />
+          ))}
 
           <div className="skew-axis-note" style={{ top: "calc(50% - 18px)", right: 10 }}>
             + 1M Return →
@@ -266,19 +320,21 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
           </div>
 
           {filteredRecords.map((r) => {
-            // Map ret_1m from [-0.25, +0.25] to [5%, 95%]
-            const clampX = Math.max(-0.25, Math.min(0.25, r.ret_1m));
+            const ret = HORIZON_RET[horizon](r);
+            // Map return from [-0.25, +0.25] to [5%, 95%]
+            const clampX = Math.max(-0.25, Math.min(0.25, ret));
             const leftPct = ((clampX + 0.25) / 0.5) * 90 + 5;
 
             // Map normalized_skew from [-0.5, +0.5] to [95%, 5%] (inverted Y)
             const clampY = Math.max(-0.5, Math.min(0.5, r.normalized_skew));
             const topPct = ((0.5 - clampY) / 1.0) * 90 + 5;
+            const hollow = r.thin_chain || !r.sanity_passed;
 
             return (
               <button
                 key={r.ticker}
                 type="button"
-                className={`skew-dot ${topPct > 70 ? "flip-tip" : ""}`}
+                className={`skew-dot ${topPct > 70 ? "flip-tip" : ""} ${hollow ? "hollow" : ""}`}
                 style={
                   {
                     left: `${leftPct}%`,
@@ -287,7 +343,7 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                   } as React.CSSProperties
                 }
                 onClick={() => onSelectTicker(r.ticker)}
-                aria-label={`${r.ticker} — ${r.quadrant}`}
+                aria-label={`${r.ticker} — ${r.quadrant}${hollow ? " (thin chain, untrusted)" : ""}`}
               >
                 <span className="skew-dot-core" />
                 <span className="skew-dot-ticker">{r.ticker}</span>
@@ -300,11 +356,30 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                     1M Return:{" "}
                     <span className={r.ret_1m >= 0 ? "up" : "down"}>{fmtPct(r.ret_1m)}</span>
                   </span>
+                  {horizon !== "1M" && (
+                    <span className="skew-tip-row">
+                      {horizon} Return:{" "}
+                      <span className={HORIZON_RET[horizon](r) >= 0 ? "up" : "down"}>
+                        {fmtPct(HORIZON_RET[horizon](r))}
+                      </span>
+                    </span>
+                  )}
+                  <span className="skew-tip-row">
+                    RVOL: <span className="mono">{r.rvol.toFixed(2)}×</span>
+                  </span>
                   <span className="skew-tip-row">
                     Norm Skew: <span className="mono">{r.normalized_skew.toFixed(2)}</span>
                   </span>
                   <span className="skew-tip-row">Quadrant: {r.quadrant}</span>
                   <span className="skew-tip-row">ATM IV: {fmtPct(r.atm_iv)}</span>
+                  {r.is_earnings_near && (
+                    <span className="skew-tip-row warn">⚠ Event premium near earnings</span>
+                  )}
+                  {hollow && (
+                    <span className="skew-tip-row warn">
+                      ○ {r.thin_chain ? "Thin chain" : "Failed sanity"} — don't trust the number
+                    </span>
+                  )}
                 </span>
               </button>
             );
@@ -312,7 +387,20 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
           {filteredRecords.length === 0 && (
             <div className="skew-empty">No tickers match the current filters.</div>
           )}
-        </div>
+          </div>
+
+          {/* Legend — PDF: hollow dot = thin chain, show it but never act on it */}
+          <div className="skew-legend">
+            <span className="skew-legend-item">
+              <span className="skew-legend-dot" /> covered name
+            </span>
+            <span className="skew-legend-item">
+              <span className="skew-legend-dot hollow" /> thin chain / sanity fail — don't trust the
+              number
+            </span>
+            <span className="skew-legend-item">ⓘ hover a dot for volume, IV &amp; event notes</span>
+          </div>
+        </>
       )}
 
       {/* 2. WATCHLIST TABLE */}
@@ -343,8 +431,10 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                   <th>Spot</th>
                   <th>1M Ret</th>
                   <th>vs SPY</th>
+                  <th>RVOL</th>
                   <th>ATM IV</th>
                   <th>Norm Skew</th>
+                  <th>Chain</th>
                   <th>Quadrant</th>
                   <th>Verdict</th>
                 </tr>
@@ -374,8 +464,27 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                     <td className={`skew-mono ${r.rel_ret_spy >= 0 ? "skew-up" : "skew-down"}`}>
                       {signedPct(r.rel_ret_spy)}
                     </td>
+                    <td
+                      className={`skew-mono ${r.rvol >= 1.5 ? "skew-up" : r.rvol < 0.7 ? "skew-down" : ""}`}
+                    >
+                      {r.rvol.toFixed(2)}×
+                    </td>
                     <td className="skew-mono">{fmtPct(r.atm_iv)}</td>
                     <td className="skew-mono skew-teal">{r.normalized_skew.toFixed(2)}</td>
+                    <td className="skew-mono">
+                      {r.thin_chain ? (
+                        <span
+                          className="skew-chain warn"
+                          title="Fewer than 6 strikes with IV, or total open interest under 500 contracts — the skew number is unreliable."
+                        >
+                          thin
+                        </span>
+                      ) : (
+                        <span className="skew-chain ok" title="Chain depth OK (≥6 strikes, ≥500 OI)">
+                          ok
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <span
                         className="skew-badge"
@@ -496,6 +605,7 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
 function AgreementCell({ summary: s }: { summary: SkewSectorSummary }) {
   const color =
     s.agreement >= 0.75 ? "var(--green)" : s.agreement >= 0.5 ? "var(--orange)" : "var(--red)";
+  const low = s.agreement < 0.5;
   return (
     <div className="skew-agree">
       <div className="skew-agree-track">
@@ -505,6 +615,7 @@ function AgreementCell({ summary: s }: { summary: SkewSectorSummary }) {
         />
       </div>
       <span className="skew-mono">{(s.agreement * 100).toFixed(0)}%</span>
+      {low && <span className="skew-agree-caveat">low agreement — sector read unreliable</span>}
     </div>
   );
 }

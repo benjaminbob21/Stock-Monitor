@@ -138,3 +138,21 @@ def test_skew_store_changes_and_trends() -> None:
         assert ch["current_quadrant"] == "Contrarian Bid"
         assert ch["quadrant_changed"] is True
         assert math.isclose(ch["skew_change_norm"], -0.35, abs_tol=1e-4)
+
+
+def test_skew_store_horizon_and_thin_chain_roundtrip() -> None:
+    """ret_1d/ret_1w/thin_chain survive save + query (horizon toggle data path)."""
+    with Storage(":memory:") as db:
+        store = SkewStore(db)
+
+        d1 = dt.date(2025, 4, 1)
+        r = _make_sample_record("AAPL", "Technology", -0.15, -0.05)
+        r.ret_1d = -0.012
+        r.ret_1w = 0.023
+        r.thin_chain = True
+        store.save_snapshot(d1, [r], {})
+
+        rec = store.get_snapshot_records(d1)[0]
+        assert rec["ret_1d"] == -0.012
+        assert rec["ret_1w"] == 0.023
+        assert rec["thin_chain"] is True

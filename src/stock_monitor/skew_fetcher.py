@@ -3,7 +3,7 @@
 Extracts:
 1. Target monthly options chain ~30-60 DTE.
 2. Per-strike implied volatility (calls & puts).
-3. 1-Month underlying return and 30-day relative volume (RVOL).
+3. 1D/1W/1M underlying returns and 30-day relative volume (RVOL).
 4. Earnings calendar date to flag Trap #5 ("Event Premium, Not Pure Sentiment").
 """
 
@@ -32,6 +32,8 @@ class RawChainData:
     strikes: list[float]
     call_ivs: dict[float, float]
     put_ivs: dict[float, float]
+    ret_1d: float = 0.0
+    ret_1w: float = 0.0
     call_volumes: dict[float, float] = field(default_factory=dict)
     put_volumes: dict[float, float] = field(default_factory=dict)
     call_open_interests: dict[float, float] = field(default_factory=dict)
@@ -39,6 +41,10 @@ class RawChainData:
     earnings_date: str | None = None
     is_earnings_near: bool = False
     error: str | None = None
+
+    def total_open_interest(self) -> float:
+        """Sum call+put open interest across strikes (Trap #4 thin-chain check)."""
+        return sum(self.call_open_interests.values()) + sum(self.put_open_interests.values())
 
 
 def select_target_expiration(
@@ -96,13 +102,18 @@ def fetch_spy_1m_return(as_of: dt.date | None = None) -> float:
         hist = spy.history(period="3mo")
         if not hist.empty:
             hist = hist.dropna(subset=["Close"])
-        if len(hist) >= 21:
-            close_now = float(hist["Close"].iloc[-1])
-            close_1m = float(hist["Close"].iloc[-21])
-            return (close_now - close_1m) / close_1m if close_1m > 0 else 0.0
+        return _hist_return(hist["Close"], 21) if not hist.empty else 0.0
     except Exception as exc:
         logger.warning("Failed to fetch SPY 1M return: %s", exc)
     return 0.0
+
+
+def _hist_return(closes: pd.Series, lookback: int) -> float:
+    """Return over `lookback` sessions; falls back to first available close."""
+    if len(closes) < 2:
+        return 0.0
+    base = float(closes.iloc[-1 - lookback]) if len(closes) > lookback else float(closes.iloc[0])
+    return (float(closes.iloc[-1]) - base) / base if base > 0 else 0.0
 
 
 def fetch_single_chain(
@@ -117,7 +128,7 @@ def fetch_single_chain(
     try:
         t = yf.Ticker(ticker)
 
-        # 1. Price history for 1M return & RVOL
+        # 1. Price history for 1D/1W/1M returns & RVOL
         hist = t.history(period="3mo")
         if not hist.empty:
             hist = hist.dropna(subset=["Close"])
@@ -136,12 +147,9 @@ def fetch_single_chain(
             )
 
         spot = float(hist["Close"].iloc[-1])
-        if len(hist) >= 21:
-            close_1m = float(hist["Close"].iloc[-21])
-            ret_1m = (spot - close_1m) / close_1m if close_1m > 0 else 0.0
-        else:
-            close_first = float(hist["Close"].iloc[0])
-            ret_1m = (spot - close_first) / close_first if close_first > 0 else 0.0
+        ret_1d = _hist_return(hist["Close"], 1)
+        ret_1w = _hist_return(hist["Close"], 5)
+        ret_1m = _hist_return(hist["Close"], 21)
 
         # RVOL = latest volume / 30-day average volume
         vol_series = hist["Volume"].tail(30)
@@ -162,6 +170,8 @@ def fetch_single_chain(
                 strikes=[],
                 call_ivs={},
                 put_ivs={},
+                ret_1d=ret_1d,
+                ret_1w=ret_1w,
                 error="No options expirations found",
             )
 
@@ -183,6 +193,8 @@ def fetch_single_chain(
                 strikes=[],
                 call_ivs={},
                 put_ivs={},
+                ret_1d=ret_1d,
+                ret_1w=ret_1w,
                 error="No suitable expiration found",
             )
 
@@ -258,6 +270,8 @@ def fetch_single_chain(
             strikes=sorted(all_strikes),
             call_ivs=call_ivs,
             put_ivs=put_ivs,
+            ret_1d=ret_1d,
+            ret_1w=ret_1w,
             call_volumes=call_vols,
             put_volumes=put_vols,
             call_open_interests=call_ois,

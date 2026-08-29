@@ -56,8 +56,12 @@ class SkewStore:
                     raw_skew, normalized_skew, quadrant, earnings_date,
                     is_earnings_near, sanity_passed, sanity_warning,
                     sector_avg_raw_skew, sector_avg_norm_skew, sector_agreement,
-                    verdict
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    verdict, ret_1d, ret_1w, thin_chain
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
+                )
                 """,
                 [
                     snapshot_date,
@@ -83,6 +87,9 @@ class SkewStore:
                     r.sector_avg_norm_skew,
                     r.sector_agreement,
                     r.verdict,
+                    r.ret_1d,
+                    r.ret_1w,
+                    r.thin_chain,
                 ],
             )
 

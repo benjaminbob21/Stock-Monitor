@@ -265,6 +265,11 @@ CREATE TABLE IF NOT EXISTS skew_daily (
     PRIMARY KEY (snapshot_date, ticker)
 );
 
+-- Horizon returns (1D/1W) added after the initial table existed; migrate in place.
+ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS ret_1d DOUBLE;
+ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS ret_1w DOUBLE;
+ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS thin_chain BOOLEAN;
+
 CREATE TABLE IF NOT EXISTS skew_sector_daily (
     snapshot_date DATE NOT NULL,
     sector VARCHAR NOT NULL,

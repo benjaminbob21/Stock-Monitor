@@ -2708,6 +2708,16 @@ body.sheet-open {
   line-height: 1.3;
 }
 
+.skew-plot-guidance {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 0.9;
+  margin-top: 1px;
+}
+
 .skew-plot-label.tl {
   top: 10px;
   left: 12px;
@@ -2775,6 +2785,14 @@ body.sheet-open {
   background: var(--q-color, var(--accent));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-color, var(--accent)) 30%, transparent);
   transition: transform 0.12s ease;
+}
+
+/* Hollow dot = thin chain / sanity fail (PDF: show it, label it, never act on it) */
+.skew-dot-core.hollow,
+.skew-dot.hollow .skew-dot-core {
+  background: transparent;
+  border: 2px solid var(--q-color, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-color, var(--accent)) 12%, transparent);
 }
 
 .skew-dot:hover .skew-dot-core,
@@ -3054,6 +3072,112 @@ body.sheet-open {
   text-align: center;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* ---- Horizon toggle (1D / 1W / 1M) ---------------------------------------- */
+.skew-horizons {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  background: var(--panel-2);
+}
+
+.skew-horizon {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 4px 14px;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+}
+
+.skew-horizon.active {
+  background: var(--accent-soft, var(--panel-3));
+  color: var(--text);
+}
+
+/* ---- Map legend ------------------------------------------------------------ */
+.skew-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 2px 0;
+}
+
+.skew-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skew-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.skew-legend-dot.hollow {
+  background: transparent;
+  border: 2px solid var(--muted);
+  box-shadow: none;
+}
+
+/* ---- Plot gridlines --------------------------------------------------------- */
+.skew-grid {
+  position: absolute;
+  pointer-events: none;
+}
+
+.skew-grid-v {
+  top: 5%;
+  bottom: 5%;
+  border-left: 1px dotted var(--border);
+}
+
+.skew-grid-h {
+  left: 5%;
+  right: 5%;
+  border-top: 1px dotted var(--border);
+}
+
+/* ---- Chain-depth + RVOL table badges --------------------------------------- */
+.skew-chain {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.skew-chain.ok {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.skew-chain.warn {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+}
+
+/* ---- Low-agreement caveat --------------------------------------------------- */
+.skew-agree-caveat {
+  display: block;
+  font-size: 10px;
+  color: var(--red);
+  margin-top: 2px;
 }
 
 /* ---- Loading / error states ------------------------------------------------ */

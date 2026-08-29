@@ -398,6 +398,10 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
               <span className="skew-legend-dot hollow" /> thin chain / sanity fail — don't trust the
               number
             </span>
+            <span className="skew-legend-item">
+              <span className="skew-er">ER</span> earnings within ~14 days — IV is inflated, skew
+              readings are noisier
+            </span>
             <span className="skew-legend-item">ⓘ hover a dot for volume, IV &amp; event notes</span>
           </div>
         </>
@@ -500,6 +504,19 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="skew-legend">
+            <span className="skew-legend-item">
+              <span className="skew-er">ER</span> earnings within ~14 days — IV is inflated, skew
+              readings are noisier
+            </span>
+            <span className="skew-legend-item">
+              <span className="skew-chain warn">thin</span> fewer than 6 strikes or &lt;500 open
+              interest — don't trust the number
+            </span>
+            <span className="skew-legend-item">
+              <span className="skew-chain ok">ok</span> chain depth fine
+            </span>
           </div>
         </>
       )}

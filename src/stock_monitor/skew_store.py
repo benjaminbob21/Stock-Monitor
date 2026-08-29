@@ -222,14 +222,20 @@ class SkewStore:
             ).fetchone()
 
         if row_prev is None or row_prev[0] is None:
-            # No prior date available yet
+            # No prior date available yet — emit the same shape as the join
+            # branch so the frontend can render "no change yet" rows.
             records = self.get_snapshot_records(curr_date)
             return [
                 {
                     **r,
                     "prev_date": None,
+                    "current_norm_skew": r["normalized_skew"],
+                    "prev_norm_skew": r["normalized_skew"],
                     "skew_change_raw": 0.0,
                     "skew_change_norm": 0.0,
+                    "current_raw_skew": r["raw_skew"],
+                    "prev_raw_skew": r["raw_skew"],
+                    "current_quadrant": r["quadrant"],
                     "prev_quadrant": r["quadrant"],
                     "quadrant_changed": False,
                 }

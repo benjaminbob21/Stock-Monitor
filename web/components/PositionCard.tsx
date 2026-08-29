@@ -148,6 +148,20 @@ export function PositionCard({
             </span>
           </div>
         )}
+        {(p.quantity ?? 1) !== 1 && (
+          <div>
+            <span className="poslabel">position</span>
+            <span className="posval">
+              {p.quantity} sh · {money(p.market_value)}
+              {p.pnl_dollar !== undefined && (
+                <em style={{ color: p.pnl_dollar >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {" "}
+                  {p.pnl_dollar >= 0 ? "+" : "−"}${Math.abs(p.pnl_dollar).toFixed(2)}
+                </em>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       {p.price_change_pct !== null && p.price_change_pct !== undefined && (

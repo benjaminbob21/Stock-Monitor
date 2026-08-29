@@ -21,9 +21,14 @@ export async function POST(request: Request) {
   if (!ticker) {
     return NextResponse.json({ detail: "ticker is required" }, { status: 400 });
   }
+  const quantityRaw = searchParams.get("quantity");
+  const quantity = quantityRaw != null && quantityRaw !== "" ? Number(quantityRaw) : 1;
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return NextResponse.json({ detail: "quantity must be positive" }, { status: 400 });
+  }
   try {
     const upstream = await backendFetch(
-      `/positions/${encodeURIComponent(ticker)}`,
+      `/positions/${encodeURIComponent(ticker)}?quantity=${quantity}`,
       { method: "POST" },
     );
     const body = await upstream

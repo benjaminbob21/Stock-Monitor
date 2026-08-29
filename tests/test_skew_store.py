@@ -140,6 +140,28 @@ def test_skew_store_changes_and_trends() -> None:
         assert math.isclose(ch["skew_change_norm"], -0.35, abs_tol=1e-4)
 
 
+def test_skew_store_changes_no_prior_date_fallback_shape() -> None:
+    """With only one snapshot date, get_skew_changes must still emit the
+    current_*/prev_* keys the frontend reads (WoW tab crash fix)."""
+    with Storage(":memory:") as db:
+        store = SkewStore(db)
+
+        d1 = dt.date(2025, 4, 1)
+        store.save_snapshot(d1, [_make_sample_record("AAPL", "Technology", 0.20, -0.04)], {})
+
+        changes = store.get_skew_changes(as_of=d1, lookback_days=7)
+        assert len(changes) == 1
+        ch = changes[0]
+        assert ch["ticker"] == "AAPL"
+        assert ch["prev_date"] is None
+        assert ch["current_norm_skew"] == ch["prev_norm_skew"] == 0.20
+        assert ch["current_raw_skew"] == ch["prev_raw_skew"]
+        assert ch["current_quadrant"] == ch["prev_quadrant"]
+        assert ch["quadrant_changed"] is False
+        assert ch["skew_change_norm"] == 0.0
+        assert ch["skew_change_raw"] == 0.0
+
+
 def test_skew_store_horizon_and_thin_chain_roundtrip() -> None:
     """ret_1d/ret_1w/thin_chain survive save + query (horizon toggle data path)."""
     with Storage(":memory:") as db:

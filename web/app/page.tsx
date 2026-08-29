@@ -450,14 +450,14 @@ export default function Home() {
   }, [sheetOpen]);
 
   const addPositionByTicker = useCallback(
-    async (symbol: string) => {
+    async (symbol: string, quantity: number = 1) => {
       const clean = symbol.trim().toUpperCase();
       if (!clean) return false;
       setAddBusy(true);
       setPosNote(null);
       try {
         const res = await fetch(
-          `/api/positions?ticker=${encodeURIComponent(clean)}`,
+          `/api/positions?ticker=${encodeURIComponent(clean)}&quantity=${quantity}`,
           { method: "POST" },
         );
         if (!res.ok) {
@@ -762,7 +762,9 @@ export default function Home() {
           loading={loading}
           error={error}
           onClose={closeSheet}
-          onAdd={() => addPositionByTicker(detailTicker)}
+          onAdd={(quantity) => {
+            void addPositionByTicker(detailTicker, quantity);
+          }}
           adding={addBusy}
           tracked={positions.some(
             (p) => p.ticker === detailTicker && p.status === "open",

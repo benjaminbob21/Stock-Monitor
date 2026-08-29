@@ -113,8 +113,11 @@ def open_position(
     storage: Storage,
     short_model: Scoreable | None = None,
     earnings_provider: object | None = None,
+    quantity: float = 1.0,
 ) -> dict:
     """Snapshot today's price + score for ``ticker`` and start tracking it."""
+    if quantity <= 0:
+        raise ValueError("quantity must be positive")
     _invalidate_view_cache()
     scored = _score_now(
         ticker,
@@ -135,6 +138,7 @@ def open_position(
         entry_conviction=int(scored["conviction"]),
         entry_recommendation=str(scored["recommendation"]),
         entry_drivers=list(scored["drivers"]),
+        quantity=float(quantity),
     )
     stored = storage.get_position(position_id)
     assert stored is not None
@@ -216,6 +220,15 @@ def position_view(
 
     since_sold = _pct_change(current_price, position.get("sold_price"))
 
+    quantity = float(position.get("quantity") or 1.0)
+    cost_basis = quantity * entry_price
+    market_value = quantity * current_price
+    if position["status"] == "sold":
+        sold_price = position.get("sold_price")
+        pnl_dollar = quantity * (current_price - sold_price) if sold_price else 0.0
+    else:
+        pnl_dollar = market_value - cost_basis
+
     return {
         **position,
         "current_price": current_price,
@@ -230,6 +243,10 @@ def position_view(
         "sentiment_label": sentiment_label,
         "signal": signal,
         "expert_view": expert,
+        "quantity": quantity,
+        "cost_basis": round(cost_basis, 2),
+        "market_value": round(market_value, 2),
+        "pnl_dollar": round(pnl_dollar, 2),
     }
 
 

@@ -46,6 +46,14 @@ export function BriefCard() {
 
   const ctx = data.context;
   const top = [...ctx.allocations].slice(0, 4);
+  const hidden = ctx.allocations.length - top.length;
+
+  // The narration is plain text; strip any markdown emphasis the model slips
+  // in so ** and * never render literally.
+  const briefText = (data.brief ?? "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/^#+\s+/gm, "");
 
   return (
     <div className="card briefcard">
@@ -57,8 +65,13 @@ export function BriefCard() {
         </button>
       </p>
 
+      <p className="briefsub">
+        Rebalance plan for your {money(ctx.total_value)} book — engine targets for
+        what you already hold, not a buy list.
+      </p>
+
       {data.brief ? (
-        <p className="brieftext">{data.brief}</p>
+        <p className="brieftext">{briefText}</p>
       ) : (
         <p className="analyst-note">{data.note ?? "No narration today."}</p>
       )}
@@ -87,6 +100,7 @@ export function BriefCard() {
               </span>
             </div>
           ))}
+          {hidden > 0 && <p className="briefmore">+ {hidden} more in the engine plan</p>}
         </div>
       )}
 

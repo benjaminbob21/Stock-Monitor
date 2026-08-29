@@ -136,6 +136,10 @@ export interface PositionView {
   expert_view: string;
   sentiment_score?: number | null;
   sentiment_label?: string | null;
+  quantity?: number;
+  cost_basis?: number;
+  market_value?: number;
+  pnl_dollar?: number;
 }
 
 export type SkewQuadrant = "Contrarian Bid" | "Chase" | "Hedged Rally" | "Fear";
@@ -192,14 +196,14 @@ export interface SkewChangeView {
   sector: string;
   spot: number;
   ret_1m: number;
-  current_norm_skew: number;
-  prev_norm_skew: number;
-  skew_change_norm: number;
-  current_raw_skew: number;
-  prev_raw_skew: number;
-  skew_change_raw: number;
-  current_quadrant: SkewQuadrant;
-  prev_quadrant: SkewQuadrant;
+  current_norm_skew: number | null;
+  prev_norm_skew: number | null;
+  skew_change_norm: number | null;
+  current_raw_skew: number | null;
+  prev_raw_skew: number | null;
+  skew_change_raw: number | null;
+  current_quadrant: SkewQuadrant | null;
+  prev_quadrant: SkewQuadrant | null;
   quadrant_changed: boolean;
   sector_agreement: number;
   is_earnings_near: boolean;

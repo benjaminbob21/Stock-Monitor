@@ -569,13 +569,18 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                 {changes.map((c) => (
                   <tr key={c.ticker} className="rowlink" onClick={() => onSelectTicker(c.ticker)}>
                     <td className="skew-tk">{c.ticker}</td>
-                    <td className="skew-mono skew-teal">{c.current_norm_skew.toFixed(2)}</td>
-                    <td className="skew-mono skew-sec">{c.prev_norm_skew.toFixed(2)}</td>
+                    <td className="skew-mono skew-teal">
+                      {c.current_norm_skew != null ? c.current_norm_skew.toFixed(2) : "—"}
+                    </td>
+                    <td className="skew-mono skew-sec">
+                      {c.prev_norm_skew != null ? c.prev_norm_skew.toFixed(2) : "—"}
+                    </td>
                     <td
-                      className={`skew-mono ${c.skew_change_norm < 0 ? "skew-up" : "skew-down"}`}
+                      className={`skew-mono ${(c.skew_change_norm ?? 0) < 0 ? "skew-up" : "skew-down"}`}
                     >
-                      {c.skew_change_norm > 0 ? "+" : ""}
-                      {c.skew_change_norm.toFixed(2)}
+                      {c.prev_norm_skew == null
+                        ? "—"
+                        : `${(c.skew_change_norm ?? 0) > 0 ? "+" : ""}${(c.skew_change_norm ?? 0).toFixed(2)}`}
                     </td>
                     <td>
                       {c.quadrant_changed ? (
@@ -585,7 +590,7 @@ export function SkewMap({ onSelectTicker }: { onSelectTicker: (t: string) => voi
                           <span className="now">{c.current_quadrant}</span>
                         </span>
                       ) : (
-                        <span className="skew-steady">{c.current_quadrant} (steady)</span>
+                        <span className="skew-steady">{c.current_quadrant ?? "—"} (steady)</span>
                       )}
                     </td>
                     <td className="skew-verdict" title={c.verdict}>

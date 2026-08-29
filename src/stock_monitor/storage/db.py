@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS positions (
     entry_drivers VARCHAR,
     status VARCHAR DEFAULT 'open',
     sold_at TIMESTAMP,
-    sold_price DOUBLE
+    sold_price DOUBLE,
+    quantity DOUBLE
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -269,6 +270,7 @@ CREATE TABLE IF NOT EXISTS skew_daily (
 ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS ret_1d DOUBLE;
 ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS ret_1w DOUBLE;
 ALTER TABLE skew_daily ADD COLUMN IF NOT EXISTS thin_chain BOOLEAN;
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS quantity DOUBLE;
 
 CREATE TABLE IF NOT EXISTS skew_sector_daily (
     snapshot_date DATE NOT NULL,
@@ -509,14 +511,15 @@ class Storage:
         entry_conviction: int,
         entry_recommendation: str,
         entry_drivers: list[dict],
+        quantity: float = 1.0,
     ) -> None:
         """Record a new tracked position (a buy the user made)."""
         self._con.execute(
             """
             INSERT INTO positions
                 (id, ticker, added_at, entry_price, entry_conviction,
-                 entry_recommendation, entry_drivers, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                 entry_recommendation, entry_drivers, status, quantity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
             """,
             [
                 position_id,
@@ -526,6 +529,7 @@ class Storage:
                 entry_conviction,
                 entry_recommendation,
                 json.dumps(entry_drivers),
+                quantity,
             ],
         )
 
@@ -541,6 +545,7 @@ class Storage:
             "status": row[7],
             "sold_at": row[8].isoformat() if row[8] is not None else None,
             "sold_price": row[9],
+            "quantity": row[10] if row[10] is not None else 1.0,
         }
 
     def list_positions(self) -> list[dict]:
@@ -548,7 +553,7 @@ class Storage:
         rows = self._con.execute(
             """
             SELECT id, ticker, added_at, entry_price, entry_conviction,
-                   entry_recommendation, entry_drivers, status, sold_at, sold_price
+                   entry_recommendation, entry_drivers, status, sold_at, sold_price, quantity
             FROM positions ORDER BY added_at DESC
             """
         ).fetchall()
@@ -558,7 +563,7 @@ class Storage:
         row = self._con.execute(
             """
             SELECT id, ticker, added_at, entry_price, entry_conviction,
-                   entry_recommendation, entry_drivers, status, sold_at, sold_price
+                   entry_recommendation, entry_drivers, status, sold_at, sold_price, quantity
             FROM positions WHERE id = ?
             """,
             [position_id],

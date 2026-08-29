@@ -1072,9 +1072,11 @@ def similar(ticker: str, state: StateDep, limit: int = 5) -> dict[str, object]:
 
 
 @app.post("/positions/{ticker}")
-def add_position(ticker: str, state: StateDep) -> dict[str, object]:
+def add_position(ticker: str, state: StateDep, quantity: float = 1.0) -> dict[str, object]:
     """Start tracking a ticker, snapshotting today's price + score as the entry."""
     _require_ready(state)
+    if quantity <= 0:
+        raise HTTPException(status_code=422, detail="quantity must be positive")
     try:
         with Storage(state.db_path) as store:  # type: ignore[arg-type]
             return open_position(
@@ -1086,6 +1088,7 @@ def add_position(ticker: str, state: StateDep) -> dict[str, object]:
                 storage=store,
                 short_model=state.model_short,
                 earnings_provider=state.earnings_provider,
+                quantity=quantity,
             )
     except TickerDataUnavailable as exc:
         raise HTTPException(status_code=404, detail=f"no price data for {ticker.upper()}") from exc

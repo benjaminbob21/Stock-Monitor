@@ -173,6 +173,10 @@ class Settings(BaseSettings):
     # (full index, slow discovery). The ranked page + paper picks read this list, so
     # "default" keeps it to the names we actually track and can score reliably.
     scan_universe: str = "default"
+    # Options skew map scan (runs after close, e.g. 22:15 CT)
+    skew_scan_hour: int = 22
+    skew_scan_minute: int = 15
+    skew_universe_tier: str = "core"  # "core" or "sp500"
     # Hour to collect + archive today's news (default just before the scan, so the
     # sentiment feature is fresh). Runs daily so we never lose a day of headlines.
     news_collect_hour: int = 21

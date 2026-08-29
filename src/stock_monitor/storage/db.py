@@ -236,6 +236,47 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     max_drawdown DOUBLE,
     hit_rate DOUBLE
 );
+
+CREATE TABLE IF NOT EXISTS skew_daily (
+    snapshot_date DATE NOT NULL,
+    ticker VARCHAR NOT NULL,
+    sector VARCHAR NOT NULL,
+    spot DOUBLE,
+    ret_1m DOUBLE,
+    rel_ret_spy DOUBLE,
+    rvol DOUBLE,
+    expiration VARCHAR,
+    dte_days INTEGER,
+    atm_iv DOUBLE,
+    call_25d_iv DOUBLE,
+    put_25d_iv DOUBLE,
+    raw_skew DOUBLE,
+    normalized_skew DOUBLE,
+    quadrant VARCHAR,
+    earnings_date VARCHAR,
+    is_earnings_near BOOLEAN,
+    sanity_passed BOOLEAN,
+    sanity_warning VARCHAR,
+    sector_avg_raw_skew DOUBLE,
+    sector_avg_norm_skew DOUBLE,
+    sector_agreement DOUBLE,
+    verdict VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (snapshot_date, ticker)
+);
+
+CREATE TABLE IF NOT EXISTS skew_sector_daily (
+    snapshot_date DATE NOT NULL,
+    sector VARCHAR NOT NULL,
+    ticker_count INTEGER,
+    avg_raw_skew DOUBLE,
+    avg_norm_skew DOUBLE,
+    avg_ret_1m DOUBLE,
+    agreement DOUBLE,
+    dominant_lean VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (snapshot_date, sector)
+);
 """
 
 

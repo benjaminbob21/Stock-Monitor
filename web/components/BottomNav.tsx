@@ -1,6 +1,6 @@
 "use client";
 
-export type Tab = "opportunities" | "recommendations" | "tracked" | "search";
+export type Tab = "opportunities" | "recommendations" | "skew" | "tracked" | "search";
 
 const items: {
   id: Tab;
@@ -9,6 +9,7 @@ const items: {
 }[] = [
   { id: "opportunities", label: "Ranked", Icon: BarsIcon },
   { id: "recommendations", label: "Buys", Icon: BoltIcon },
+  { id: "skew", label: "Skew Map", Icon: MapIcon },
   { id: "tracked", label: "Portfolio", Icon: WalletIcon },
   { id: "search", label: "Search", Icon: SearchIcon },
 ];
@@ -75,6 +76,26 @@ function BoltIcon({ active }: IconProps) {
       strokeLinejoin="round"
     >
       <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+    </svg>
+  );
+}
+
+function MapIcon({ active }: IconProps) {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.3 : 1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3v18M3 12h18" />
+      <circle cx="8" cy="16" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="8" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }

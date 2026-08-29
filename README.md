@@ -13,6 +13,7 @@ A personal, **ML-powered stock research & recommendation tool**. It scans the ma
 - **On-demand lookup** — search any ticker for an instant, explained conviction score.
 - **Explainable ML** — a calibrated conviction score (0–100) with a per-stock breakdown of the top contributing factors (no black boxes).
 - **Alerts** on entry signals, exit/sell signals, sharp moves, and approaching earnings.
+- **Options Skew Map** — extracts market sentiment from 25-delta options chains across 4 quadrants (Contrarian Bid, Chase, Hedged Rally, Fear) with sector benchmarks and automated verdict sentences (`docs/skew.md`).
 
 ## How it works
 

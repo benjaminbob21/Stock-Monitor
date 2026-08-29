@@ -138,6 +138,76 @@ export interface PositionView {
   sentiment_label?: string | null;
 }
 
+export type SkewQuadrant = "Contrarian Bid" | "Chase" | "Hedged Rally" | "Fear";
+
+export interface SkewRecordView {
+  snapshot_date: string;
+  ticker: string;
+  sector: string;
+  spot: number;
+  ret_1m: number;
+  rel_ret_spy: number;
+  rvol: number;
+  expiration: string;
+  dte_days: number;
+  atm_iv: number;
+  call_25d_iv: number;
+  put_25d_iv: number;
+  raw_skew: number;
+  normalized_skew: number;
+  quadrant: SkewQuadrant;
+  earnings_date: string | null;
+  is_earnings_near: boolean;
+  sanity_passed: boolean;
+  sanity_warning: string | null;
+  sector_avg_raw_skew: number;
+  sector_avg_norm_skew: number;
+  sector_agreement: number;
+  verdict: string;
+}
+
+export interface SkewSectorSummary {
+  snapshot_date: string;
+  sector: string;
+  ticker_count: number;
+  avg_raw_skew: number;
+  avg_norm_skew: number;
+  avg_ret_1m: number;
+  agreement: number;
+  dominant_lean: string;
+}
+
+export interface SkewLatestResponse {
+  date: string | null;
+  records: SkewRecordView[];
+  counts: Record<SkewQuadrant, number>;
+  sectors: SkewSectorSummary[];
+}
+
+export interface SkewChangeView {
+  ticker: string;
+  sector: string;
+  spot: number;
+  ret_1m: number;
+  current_norm_skew: number;
+  prev_norm_skew: number;
+  skew_change_norm: number;
+  current_raw_skew: number;
+  prev_raw_skew: number;
+  skew_change_raw: number;
+  current_quadrant: SkewQuadrant;
+  prev_quadrant: SkewQuadrant;
+  quadrant_changed: boolean;
+  sector_agreement: number;
+  is_earnings_near: boolean;
+  verdict: string;
+}
+
+export interface SkewChangesResponse {
+  changes: SkewChangeView[];
+}
+
+
 export interface PositionsResponse {
   positions: PositionView[];
 }

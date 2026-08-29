@@ -588,6 +588,17 @@ def refresh_price_cache_job(settings: Settings) -> None:
     logger.info("price cache append: %d names, %d rows added", len(added), sum(added.values()))
 
 
+def run_skew_scan_job(settings: Settings) -> None:
+    """Run the scheduled options skew map scan."""
+    from stock_monitor.skew_service import SkewService
+    from stock_monitor.storage.db import Storage
+
+    logger.info("running scheduled options skew scan")
+    with Storage(settings.db_path) as store:
+        service = SkewService(store, settings)
+        service.run(tier=settings.skew_universe_tier, force=False)
+
+
 def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
     """Register the tiered jobs on any APScheduler instance."""
     scheduler.add_job(
@@ -595,6 +606,14 @@ def _add_jobs(scheduler, settings: Settings, notifier: Notifier) -> None:
         "cron",
         hour=settings.scan_hour,
         id="universe_scan",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        lambda: _safe(run_skew_scan_job, settings),
+        "cron",
+        hour=settings.skew_scan_hour,
+        minute=settings.skew_scan_minute,
+        id="skew_scan",
         replace_existing=True,
     )
     scheduler.add_job(

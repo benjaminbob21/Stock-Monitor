@@ -108,6 +108,17 @@ def world() -> SimpleNamespace:
     )
 
 
+@pytest.fixture(autouse=True)
+def _test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests run with clean settings and no auth requirements unless explicit."""
+    monkeypatch.setenv("API_SHARED_SECRET", "")
+    from stock_monitor.config import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def pooled_frame() -> pd.DataFrame:
     """A labelled multi-ticker frame with enough history for walk-forward folds."""

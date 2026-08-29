@@ -760,6 +760,108 @@ def scorecard_endpoint(state: StateDep) -> dict[str, object]:
         return build_scorecard(store)
 
 
+@app.get("/skew/latest")
+def get_skew_latest(
+    state: StateDep,
+    quadrant: str | None = None,
+    sector: str | None = None,
+) -> dict[str, object]:
+    """Return the latest Options Skew Map snapshot records."""
+    from stock_monitor.skew_store import SkewStore
+
+    if not state.db_path:
+        return {"date": None, "records": [], "counts": {}, "sectors": []}
+    with Storage(state.db_path) as store:
+        skew_store = SkewStore(store)
+        latest_date = skew_store.get_latest_date()
+        if latest_date is None:
+            return {"date": None, "records": [], "counts": {}, "sectors": []}
+        records = skew_store.get_snapshot_records(latest_date, quadrant=quadrant, sector=sector)
+        sectors = skew_store.get_snapshot_sectors(latest_date)
+        counts = {
+            "Contrarian Bid": 0,
+            "Chase": 0,
+            "Hedged Rally": 0,
+            "Fear": 0,
+        }
+        for r in skew_store.get_snapshot_records(latest_date):
+            q = r.get("quadrant")
+            if q in counts:
+                counts[q] += 1
+        return {
+            "date": latest_date.isoformat(),
+            "records": records,
+            "counts": counts,
+            "sectors": sectors,
+        }
+
+
+@app.get("/skew/sectors")
+def get_skew_sectors(state: StateDep) -> dict[str, object]:
+    """Return latest sector-level skew averages and agreement metrics."""
+    from stock_monitor.skew_store import SkewStore
+
+    if not state.db_path:
+        return {"date": None, "sectors": []}
+    with Storage(state.db_path) as store:
+        skew_store = SkewStore(store)
+        latest_date = skew_store.get_latest_date()
+        if latest_date is None:
+            return {"date": None, "sectors": []}
+        sectors = skew_store.get_snapshot_sectors(latest_date)
+        return {"date": latest_date.isoformat(), "sectors": sectors}
+
+
+@app.get("/skew/changes")
+def get_skew_changes(state: StateDep, days: int = 7) -> dict[str, object]:
+    """Return day-over-day or week-over-week skew changes ('the change is the signal')."""
+    from stock_monitor.skew_store import SkewStore
+
+    if not state.db_path:
+        return {"changes": []}
+    with Storage(state.db_path) as store:
+        skew_store = SkewStore(store)
+        changes = skew_store.get_skew_changes(lookback_days=days)
+        return {"changes": changes}
+
+
+@app.get("/skew/ticker/{ticker}")
+def get_skew_ticker(state: StateDep, ticker: str, limit: int = 60) -> dict[str, object]:
+    """Return historical time series of skew metrics for a single ticker."""
+    from stock_monitor.skew_store import SkewStore
+
+    if not state.db_path:
+        return {"ticker": ticker.upper(), "history": []}
+    with Storage(state.db_path) as store:
+        skew_store = SkewStore(store)
+        history = skew_store.get_ticker_trend(ticker.upper(), limit=limit)
+        return {"ticker": ticker.upper(), "history": history}
+
+
+@app.post("/skew/scan")
+def trigger_skew_scan(
+    state: StateDep,
+    background: BackgroundTasks,
+    force: bool = True,
+    tier: str = "core",
+) -> dict[str, object]:
+    """Trigger an on-demand Options Skew Map scan in the background."""
+    if not state.db_path:
+        raise HTTPException(status_code=503, detail="storage unavailable")
+
+    db_path = state.db_path
+
+    def _run_scan() -> None:
+        from stock_monitor.skew_service import SkewService
+
+        with Storage(db_path) as store:
+            service = SkewService(store)
+            service.run(tier=tier, force=force)
+
+    background.add_task(_run_scan)
+    return {"status": "started", "tier": tier, "force": force}
+
+
 def _news_trend_from_history(sentiment: pd.DataFrame | None) -> dict[str, object] | None:
     """Summarize backfilled news sentiment into a plain trajectory (recent vs prior).
 

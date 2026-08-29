@@ -68,6 +68,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.code-workspace
+.aider*
+bluebird_stock_photos/
 
 # ---- Oracle Cloud grabber config (local OCIDs, never commit) ----
 scripts/.oci-grab.env

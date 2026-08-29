@@ -11,6 +11,7 @@ import { BriefCard } from "@/components/BriefCard";
 import { ScanProgress } from "@/components/ScanProgress";
 import { ScorecardCard } from "@/components/Scorecard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { SkewMap } from "@/components/SkewMap";
 import { StockDetailSheet } from "@/components/StockDetailSheet";
 import { parseBackendDate } from "@/lib/ui";
 import type {
@@ -37,6 +38,7 @@ import type {
 const TAB_TITLES: Record<Tab, string> = {
   opportunities: "Ranked opportunities",
   recommendations: "High-confidence buys",
+  skew: "Options Skew Map",
   tracked: "Portfolio",
   search: "Search",
 };
@@ -618,6 +620,10 @@ export default function Home() {
               ))}
             </div>
           </>
+        )}
+
+        {tab === "skew" && (
+          <SkewMap onSelectTicker={lookup} />
         )}
 
         {tab === "tracked" && (

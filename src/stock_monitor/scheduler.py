@@ -502,7 +502,12 @@ def run_retrain(settings: Settings) -> None:
         result.model_version, result.rows_trained, result.train_accuracy,
     )
     try:
-        import stock_monitor.api.app as api_app
+        # importlib, not `import ... as`: the package's `app` attribute (the
+        # FastAPI instance) shadows the submodule in a plain import-as, so
+        # `_state` would never be reachable.
+        import importlib
+
+        api_app = importlib.import_module("stock_monitor.api.app")
         from stock_monitor.models.registry import compute_model_version, load_model
 
         if api_app._state is not None:

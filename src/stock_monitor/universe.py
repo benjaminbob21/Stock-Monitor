@@ -19,7 +19,7 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     # Broad-market ETFs (the S&P/Nasdaq baselines the model measures everything against).
     "SPY", "QQQ",
     # Tech / comms
-    "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AVGO", "ADBE", "CRM", "ORCL", "CSCO",
+    "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AVGO", "ADBE", "CRM", "ORCL", "CSCO", "NOW",
     # Semiconductors (beyond the mega-caps)
     "AMD", "MU", "QCOM", "TXN", "TSM",
     # Cybersecurity / software

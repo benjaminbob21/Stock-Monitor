@@ -23,7 +23,7 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     # Semiconductors (beyond the mega-caps)
     "AMD", "MU", "QCOM", "TXN", "TSM",
     # Cybersecurity / software
-    "PANW",
+    "PANW", "PLTR",
     # Consumer
     "AMZN", "TSLA", "HD", "MCD", "NKE", "KO", "PEP", "COST", "WMT",
     # Consumer-internet / mobility

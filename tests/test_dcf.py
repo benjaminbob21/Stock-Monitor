@@ -121,6 +121,35 @@ def test_dcf_net_debt_bridge_uses_liabilities_minus_cash() -> None:
     assert result["inputs"]["bridge"] == "liabilities − cash"
 
 
+def test_dcf_growth_anchor_prefers_freshest_revenue_alias() -> None:
+    # MSFT/AAPL pattern: stale "Revenues" series ends years before the fresh
+    # contract-revenue tag. The anchor must use the freshest series.
+    facts = [
+        _fact("Revenues", 1000.0, 2021),
+        _fact("Revenues", 1100.0, 2022),  # stale: ends 2022
+        _fact("RevenueFromContractWithCustomerExcludingAssessedTax", 1000.0, 2022),
+        _fact("RevenueFromContractWithCustomerExcludingAssessedTax", 1400.0, 2024),
+        *_healthy_facts(),
+    ]
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28))
+    assert result["inputs"]["growth_source"] == "revenue cagr"
+    # Fresh alias 1000→1400 in 2 years ≈ 18.3% CAGR — not the stale 4.9%.
+    assert result["inputs"]["growth_pct"] == pytest.approx(1.4 ** 0.5 - 1, abs=0.01)
+
+
+def test_dcf_bridge_prefers_filed_debt_over_liabilities() -> None:
+    # Non-financial with filed debt: bridge must use debt − cash, not total
+    # liabilities − cash (which would count payables/deferred revenue as debt).
+    facts = [
+        *_healthy_facts(),
+        _fact("LongTermDebtNoncurrent", 800.0, 2024),
+        _fact("LongTermDebtCurrent", 200.0, 2024),
+    ]
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28))
+    assert result["inputs"]["net_debt"] == 500.0  # (800 + 200) − 500
+    assert result["inputs"]["bridge"] == "filed debt − cash"
+
+
 def test_dcf_no_share_count_is_none() -> None:
     facts = [f for f in _healthy_facts() if f.concept != "CommonStockSharesOutstanding"]
     result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28))

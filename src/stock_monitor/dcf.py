@@ -155,9 +155,17 @@ def compute_dcf(
     base_year, base_fcf = fcf_series[-1]
 
     # ---- Growth anchor -------------------------------------------------------
-    revenue = _annual_series(facts, "Revenues", as_of) or _annual_series(
+    # Pick the revenue alias whose latest fiscal year is freshest — some
+    # issuers stopped filing "Revenues" years ago (MSFT after FY2010, AAPL
+    # after FY2018) and switched to the contract-revenue tag, so a plain
+    # "Revenues or alias" preference would anchor growth on a stale series.
+    rev_primary = _annual_series(facts, "Revenues", as_of)
+    rev_alias = _annual_series(
         facts, "RevenueFromContractWithCustomerExcludingAssessedTax", as_of
     )
+    revenue: YearSeries = rev_primary
+    if rev_alias and (not rev_primary or rev_alias[-1][0] > rev_primary[-1][0]):
+        revenue = rev_alias
     fcf_negative = base_fcf <= 0
     revenue_growth = _cagr(revenue)
     if growth is not None:
@@ -219,20 +227,19 @@ def compute_dcf(
 
     net_debt: float | None = None
     bridge: str
-    if equity_fact is not None and liabilities_fact is not None:
-        # For non-financials, total liabilities minus cash is a fair net-debt
-        # stand-in. For financials (banks/insurers — customer deposits, policy
-        # liabilities, no capex), it can exceed the entire enterprise value and
-        # must not be subtracted; fall back to filed borrowings only.
-        if capex_missing and debt_by_year:
-            net_debt = debt_by_year[max(debt_by_year)] - cash
-            bridge = "filed debt − cash (financial: liabilities not netted)"
-        else:
-            net_debt = liabilities_fact.value - cash
-            bridge = "liabilities − cash"
-    elif debt_by_year:
+    if debt_by_year:
+        # Prefer filed borrowings whenever present — total liabilities include
+        # operating items (deferred revenue, payables, leases) that are not
+        # debt, which would overstate net debt for non-financials.
         net_debt = debt_by_year[max(debt_by_year)] - cash
         bridge = "filed debt − cash"
+        if capex_missing:
+            bridge += " (financial: liabilities not netted)"
+    elif equity_fact is not None and liabilities_fact is not None:
+        # No filed debt concepts at all: fall back to total liabilities minus
+        # cash as a conservative net-debt stand-in.
+        net_debt = liabilities_fact.value - cash
+        bridge = "liabilities − cash"
     else:
         bridge = "unavailable — treated as zero"
 

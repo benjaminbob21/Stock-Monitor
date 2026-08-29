@@ -21,7 +21,7 @@ DEFAULT_UNIVERSE: tuple[str, ...] = (
     # Tech / comms
     "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AVGO", "ADBE", "CRM", "ORCL", "CSCO",
     # Semiconductors (beyond the mega-caps)
-    "AMD", "MU", "QCOM", "TXN",
+    "AMD", "MU", "QCOM", "TXN", "TSM",
     # Cybersecurity / software
     "PANW",
     # Consumer

@@ -176,6 +176,7 @@ SECTOR_MAP: dict[str, str] = {
     "HIMS": "Health Care",  # Hims & Hers — telehealth
     "SOFI": "Financials",  # SoFi — digital banking / fintech
     "ZETA": "Technology",  # Zeta Global — marketing data/cloud
+    "TSM": "Technology",  # TSMC — semiconductor foundry (ADR)
 }
 
 

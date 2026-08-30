@@ -37,6 +37,29 @@ _DEFAULT_TERMINAL_GROWTH = 0.025
 # Facts older than this are labelled stale in the response (seasonality can explain
 # part of the gap for quarterly facts, so this is a soft label, not a rejection).
 _STALE_AFTER_DAYS = 550
+# Terminal-value dominance warning: beyond this share of enterprise value the
+# valuation is mostly a perpetuity bet, not a read on the business.
+_TERMINAL_WEIGHT_WARN = 0.70
+# Capex fallback for issuers that file no capex concept at all (mostly banks and
+# insurers, whose cash-flow statements carry no PP&E purchases): capex estimated
+# as this share of revenue, so FCF is haircut instead of silently proxied by OCF.
+_CAPEX_TO_REVENUE_DEFAULT = 0.02
+
+# Capex aliases, in preference order. Most industrials file
+# PaymentsToAcquirePropertyPlantAndEquipment; some (BLBD, V, AIG) file the
+# broader PaymentsToAcquireProductiveAssets; SPGI/PLTR split capex across
+# several PaymentsToAcquire* tags that must be summed per year.
+_CAPEX_PRIMARY = "PaymentsToAcquirePropertyPlantAndEquipment"
+_CAPEX_ALIASES = (
+    _CAPEX_PRIMARY,
+    "PaymentsToAcquireProductiveAssets",
+    "PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets",
+    "PaymentsForCapitalExpenditures",
+)
+_CAPEX_SPLIT_CONCEPTS = (
+    "PaymentsToAcquireOtherProductiveAssets",
+    "PaymentsToAcquireInterestInJointVenture",
+)
 
 _CONCEPTS = (
     "NetCashProvidedByUsedInOperatingActivities",
@@ -88,6 +111,27 @@ def _annual_series(facts: Sequence[FundamentalFact], concept: str, as_of: dt.dat
         if prior is None or abs(fact.value) >= abs(prior.value):
             best[year] = fact
     return sorted((int(year), float(fact.value)) for year, fact in best.items())
+
+
+def _capex_by_year(facts: Sequence[FundamentalFact], as_of: dt.date) -> dict[int, float]:
+    """Capex per fiscal year from whichever alias scheme the issuer files.
+
+    Preference: a single primary alias (PP&E or ProductiveAssets) wins outright;
+    otherwise the split concepts (OtherProductiveAssets, JV interests) are summed
+    on top of the primary when an issuer reports capex across several tags.
+    """
+    primary: dict[int, float] = {}
+    for alias in _CAPEX_ALIASES:
+        series = _annual_series(facts, alias, as_of)
+        if series:
+            primary = dict(series)
+            break
+    if not primary:
+        return {}
+    for split in _CAPEX_SPLIT_CONCEPTS:
+        for year, value in _annual_series(facts, split, as_of):
+            primary[year] = primary.get(year, 0.0) + value
+    return primary
 
 
 def _cagr(series: YearSeries) -> float | None:
@@ -143,14 +187,42 @@ def compute_dcf(
     if not ocf_series:
         return _none_result(["no operating cash flow history in SEC filings"])
 
-    capex_by_year = dict(_annual_series(facts, "PaymentsToAcquirePropertyPlantAndEquipment", as_of))
+    capex_by_year = _capex_by_year(facts, as_of)
     fcf_series: YearSeries = []
     for year, ocf in ocf_series:
         capex = capex_by_year.get(year)
         fcf_series.append((year, ocf - capex if capex is not None else ocf))
     capex_missing = all(year not in capex_by_year for year, _ in ocf_series)
+    capex_estimated = False
     if capex_missing:
-        reasons.append("capex not reported — FCF proxied by operating cash flow")
+        # Never silently proxy FCF with OCF: haircut capex at an industry-average
+        # share of revenue so the valuation stays conservative, and say so.
+        rev_primary = _annual_series(facts, "Revenues", as_of)
+        rev_alias = _annual_series(
+            facts, "RevenueFromContractWithCustomerExcludingAssessedTax", as_of
+        )
+        revenue_for_capex = rev_primary if rev_primary else rev_alias
+        if revenue_for_capex:
+            rev_by_year = dict(revenue_for_capex)
+            haircut: dict[int, float] = {}
+            for year, _ocf in ocf_series:
+                rev = rev_by_year.get(year)
+                if rev is not None and rev > 0:
+                    haircut[year] = _CAPEX_TO_REVENUE_DEFAULT * rev
+            if haircut:
+                fcf_series = [
+                    (year, ocf - haircut.get(year, _CAPEX_TO_REVENUE_DEFAULT * ocf))
+                    for year, ocf in ocf_series
+                ]
+                capex_estimated = True
+                reasons.append(
+                    "capex not reported — estimated at "
+                    f"{_CAPEX_TO_REVENUE_DEFAULT:.0%} of revenue (conservative haircut)"
+                )
+            else:
+                reasons.append("capex not reported — FCF proxied by operating cash flow")
+        else:
+            reasons.append("capex not reported — FCF proxied by operating cash flow")
 
     base_year, base_fcf = fcf_series[-1]
 
@@ -194,20 +266,40 @@ def compute_dcf(
         return _none_result(reasons, base_fcf=base_fcf)
 
     # ---- PV of the explicit stage -------------------------------------------
+    # Growth fades linearly from the anchor down to the terminal rate across the
+    # explicit window — a 10-year cliff-free glide instead of 5 years at one
+    # flat rate followed by an abrupt drop to perpetuity growth.
     pv_explicit = 0.0
     flows: list[dict[str, float]] = []
     fcf = base_fcf
     for offset in range(1, _EXPLICIT_YEARS + 1):
-        fcf = fcf * (1.0 + growth_v)
+        fade = (offset - 1) / max(_EXPLICIT_YEARS - 1, 1)
+        year_growth = growth_v + (term_v - growth_v) * fade
+        fcf = fcf * (1.0 + year_growth)
         pv = fcf / (1.0 + wacc_v) ** offset
         pv_explicit += pv
-        flows.append({"year": float(base_year + offset), "fcf": fcf, "pv": pv})
+        flows.append(
+            {"year": float(base_year + offset), "fcf": fcf, "pv": pv, "growth": year_growth}
+        )
 
     # ---- Terminal value (Gordon) --------------------------------------------
     terminal_fcf = fcf * (1.0 + term_v)
     terminal_value = terminal_fcf / (wacc_v - term_v)
     pv_terminal = terminal_value / (1.0 + wacc_v) ** _EXPLICIT_YEARS
     ev = pv_explicit + pv_terminal
+
+    # ---- Terminal sanity check (exit multiple) -------------------------------
+    # Cross-check the perpetuity with a conservative EV/FCF multiple applied to
+    # the final explicit-year FCF; users see both so the TV is not a black box.
+    exit_multiple = 1.0 / (wacc_v - term_v)  # ~15.4x at defaults
+    exit_multiple_value = fcf * exit_multiple
+    pv_exit_multiple = exit_multiple_value / (1.0 + wacc_v) ** _EXPLICIT_YEARS
+    terminal_weight = pv_terminal / ev if ev else None
+    if terminal_weight is not None and terminal_weight > _TERMINAL_WEIGHT_WARN:
+        reasons.append(
+            f"terminal value is {terminal_weight:.0%} of enterprise value — "
+            "the estimate leans heavily on the perpetuity assumption"
+        )
 
     # ---- Equity bridge -------------------------------------------------------
     shares_fact = latest_fact(facts, "CommonStockSharesOutstanding", as_of)
@@ -291,7 +383,11 @@ def compute_dcf(
         "inputs": inputs,
         "pv_explicit": pv_explicit,
         "pv_terminal": pv_terminal,
-        "terminal_weight": pv_terminal / ev if ev else None,
+        "terminal_weight": terminal_weight,
+        "exit_multiple": exit_multiple,
+        "exit_multiple_value": exit_multiple_value,
+        "pv_exit_multiple": pv_exit_multiple,
+        "capex_estimated": capex_estimated,
         "flows": flows,
         "verdict": verdict,
     }
@@ -321,6 +417,10 @@ def _none_result(reasons: list[str], *, base_fcf: float | None = None) -> dict[s
         "pv_explicit": None,
         "pv_terminal": None,
         "terminal_weight": None,
+        "exit_multiple": None,
+        "exit_multiple_value": None,
+        "pv_exit_multiple": None,
+        "capex_estimated": False,
         "flows": [],
         "verdict": None,
     }

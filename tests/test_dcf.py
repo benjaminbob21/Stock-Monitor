@@ -102,7 +102,26 @@ def test_dcf_negative_fcf_with_manual_growth_still_values() -> None:
     assert result["value"] is not None
 
 
-def test_dcf_capex_missing_is_rough_and_proxies_ocf() -> None:
+def test_dcf_capex_missing_is_rough_and_haircuts_ocf() -> None:
+    # No capex concept at all: FCF must NOT be silently proxied by OCF — a
+    # 2%-of-revenue haircut is applied instead and the response says so.
+    facts = [
+        _fact("NetCashProvidedByUsedInOperatingActivities", 1500.0, 2024),
+        _fact("Revenues", 10000.0, 2024),
+        _fact("CommonStockSharesOutstanding", 1000.0, 2024),
+        _fact("StockholdersEquity", 5000.0, 2024),
+        _fact("Liabilities", 2000.0, 2024),
+    ]
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.0)
+    assert result["confidence"] == "rough"
+    assert result["capex_estimated"] is True
+    assert result["inputs"]["base_fcf"] == pytest.approx(1500.0 - 0.02 * 10000.0)
+    assert any("capex not reported" in r for r in result["reasons"])
+
+
+def test_dcf_capex_missing_no_revenue_proxies_ocf() -> None:
+    # No capex AND no revenue to scale a haircut from: fall back to OCF proxy,
+    # still flagged rough with an explicit reason.
     facts = [
         _fact("NetCashProvidedByUsedInOperatingActivities", 1500.0, 2024),
         _fact("CommonStockSharesOutstanding", 1000.0, 2024),
@@ -111,8 +130,75 @@ def test_dcf_capex_missing_is_rough_and_proxies_ocf() -> None:
     ]
     result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.0)
     assert result["confidence"] == "rough"
+    assert result["capex_estimated"] is False
     assert result["inputs"]["base_fcf"] == 1500.0
     assert any("capex not reported" in r for r in result["reasons"])
+
+
+def test_dcf_capex_alias_productive_assets_used() -> None:
+    # BLBD/V/AIG pattern: capex filed only as PaymentsToAcquireProductiveAssets.
+    facts = [
+        _fact("NetCashProvidedByUsedInOperatingActivities", 1500.0, 2024),
+        _fact("PaymentsToAcquireProductiveAssets", 300.0, 2024),
+        _fact("CommonStockSharesOutstanding", 1000.0, 2024),
+        _fact("StockholdersEquity", 5000.0, 2024),
+        _fact("Liabilities", 2000.0, 2024),
+    ]
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.0)
+    assert result["confidence"] == "good"
+    assert result["capex_estimated"] is False
+    assert result["inputs"]["base_fcf"] == 1200.0
+    assert not any("capex not reported" in r for r in result["reasons"])
+
+
+def test_dcf_capex_split_concepts_summed() -> None:
+    # SPGI pattern: primary PP&E tag plus OtherProductiveAssets split.
+    facts = [
+        _fact("NetCashProvidedByUsedInOperatingActivities", 1500.0, 2024),
+        _fact("PaymentsToAcquirePropertyPlantAndEquipment", 200.0, 2024),
+        _fact("PaymentsToAcquireOtherProductiveAssets", 100.0, 2024),
+        _fact("CommonStockSharesOutstanding", 1000.0, 2024),
+        _fact("StockholdersEquity", 5000.0, 2024),
+        _fact("Liabilities", 2000.0, 2024),
+    ]
+    result = compute_dcf(facts, price=50.0, as_of=dt.date(2026, 8, 28), growth=0.0)
+    assert result["inputs"]["base_fcf"] == 1200.0
+
+
+def test_dcf_growth_fades_to_terminal_rate() -> None:
+    # With a 30% anchor the per-year growth must glide down to the terminal
+    # rate by the final explicit year, not stay flat at 30%.
+    result = compute_dcf(_healthy_facts(), price=50.0, as_of=dt.date(2026, 8, 28))
+    growths = [f["growth"] for f in result["flows"]]
+    assert growths[0] > growths[-1]
+    assert growths[-1] == pytest.approx(result["inputs"]["terminal_growth_pct"])
+
+
+def test_dcf_exit_multiple_crosscheck_present() -> None:
+    result = compute_dcf(_healthy_facts(), price=50.0, as_of=dt.date(2026, 8, 28))
+    assert result["exit_multiple"] == pytest.approx(1 / (0.085 - 0.025))
+    assert result["exit_multiple_value"] > 0
+    assert 0 < result["pv_exit_multiple"] < result["exit_multiple_value"]
+
+
+def test_dcf_terminal_weight_warning_when_dominant() -> None:
+    # High growth + low WACC pushes most of the value into the terminal —
+    # the response must flag it.
+    result = compute_dcf(
+        _healthy_facts(), price=50.0, as_of=dt.date(2026, 8, 28), growth=0.30
+    )
+    assert result["terminal_weight"] is not None
+    if result["terminal_weight"] > 0.70:
+        assert any("terminal value" in r and "perpetuity" in r for r in result["reasons"])
+
+
+def test_dcf_terminal_weight_no_warning_when_modest() -> None:
+    result = compute_dcf(
+        _healthy_facts(), price=50.0, as_of=dt.date(2026, 8, 28), growth=0.0
+    )
+    assert result["terminal_weight"] is not None
+    if result["terminal_weight"] <= 0.70:
+        assert not any("perpetuity" in r for r in result["reasons"])
 
 
 def test_dcf_net_debt_bridge_uses_liabilities_minus_cash() -> None:

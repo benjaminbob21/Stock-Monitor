@@ -57,6 +57,14 @@ _DCF_EXTRA_CONCEPTS: tuple[str, ...] = (
     "LongTermDebtNoncurrent",
     "LongTermDebtCurrent",
     "ShortTermBorrowings",
+    # Capex aliases: some issuers (BLBD, V, AIG) file the broader
+    # PaymentsToAcquireProductiveAssets instead of the PP&E tag, and a few
+    # (SPGI, PLTR) split capex across several PaymentsToAcquire* tags.
+    "PaymentsToAcquireProductiveAssets",
+    "PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets",
+    "PaymentsForCapitalExpenditures",
+    "PaymentsToAcquireOtherProductiveAssets",
+    "PaymentsToAcquireInterestInJointVenture",
 )
 
 # SEC's ticker map occasionally re-points a ticker at a freshly created CIK

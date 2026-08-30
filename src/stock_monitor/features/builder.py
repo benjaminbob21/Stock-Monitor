@@ -59,10 +59,12 @@ _NI_CONCEPTS = ("NetIncomeLoss", "ProfitLoss")
 
 # Flow concepts are reported for durations (quarter/YTD/FY) and must be summed
 # over a trailing twelve months before entering any ratio. Balance-sheet items
-# are instants and stay as latest snapshots.
+# are instants and stay as latest snapshots. Capex aliases: some issuers file
+# the broader ProductiveAssets tag instead of PP&E (BLBD, V, AIG).
 _FLOW_CONCEPTS = (
     "NetCashProvidedByUsedInOperatingActivities",
     "PaymentsToAcquirePropertyPlantAndEquipment",
+    "PaymentsToAcquireProductiveAssets",
 )
 
 _FILING_FORMS = ("10-K", "10-Q")
@@ -335,7 +337,7 @@ def build_feature_row(
     liabilities, k4 = _latest_value(facts, "Liabilities", as_of)
     revenues, k5 = _ttm_flow_alias(facts, _REVENUE_CONCEPTS, as_of)
     ocf, k6 = _ttm_flow(facts, _FLOW_CONCEPTS[0], as_of)
-    capex, k7 = _ttm_flow(facts, _FLOW_CONCEPTS[1], as_of)
+    capex, k7 = _ttm_flow_alias(facts, _FLOW_CONCEPTS[1:], as_of)
     shares, k8 = _latest_value(facts, "CommonStockSharesOutstanding", as_of)
 
     market_cap = p_last * shares if shares else None

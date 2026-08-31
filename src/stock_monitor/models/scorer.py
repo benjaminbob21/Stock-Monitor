@@ -20,6 +20,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import shap
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
 from stock_monitor.features.builder import FEATURE_COLUMNS
 from stock_monitor.models.calibration import CalibratedModel, Calibrator, fit_calibrator
@@ -27,7 +28,6 @@ from stock_monitor.models.calibration import CalibratedModel, Calibrator, fit_ca
 # Forward-return label window. Locked to 12 months for a cleaner long-term signal
 # (build-plan open item #4). Overridable via config for experiments.
 LABEL_WINDOW_MONTHS = 12
-_PURGE_MONTHS = LABEL_WINDOW_MONTHS
 
 # Base LightGBM hyperparameters for the (long-horizon) primary model.
 _DEFAULT_LGBM_PARAMS: dict = {
@@ -133,30 +133,14 @@ def train_calibrated_model(
     class_counts = y.value_counts()
     if len(y) >= 2 * cv and class_counts.min() >= cv:
         try:
-            # Purged, time-ordered folds: rows are labelled with forward returns,
-            # so a shuffled split lets the calibrator learn from labels that
-            # overlap the fold it predicts (label leakage through time). Sorting
-            # by as_of and purging one label window between train and eval
-            # folds keeps the out-of-fold probabilities honest.
-            order = frame["as_of"].argsort().to_numpy()
-            x_sorted, y_sorted = x.iloc[order], y.iloc[order]
-            as_of_sorted = pd.to_datetime(frame["as_of"].iloc[order]).reset_index(drop=True)
-            oof = np.full(len(y_sorted), np.nan)
-            fold_edges = np.array_split(np.arange(len(y_sorted)), cv)
-            for eval_idx in fold_edges:
-                eval_lo = eval_idx[0]
-                cutoff = as_of_sorted.iloc[eval_lo] - pd.DateOffset(
-                    months=_PURGE_MONTHS
-                )
-                train_idx = np.where(as_of_sorted <= cutoff)[0]
-                if len(train_idx) == 0 or y_sorted.iloc[train_idx].nunique() < 2:
-                    continue
-                fold_model = lgb.LGBMClassifier(**base.get_params())
-                fold_model.fit(x_sorted.iloc[train_idx], y_sorted.iloc[train_idx])
-                oof[eval_idx] = fold_model.predict_proba(x_sorted.iloc[eval_idx])[:, 1]
-            valid = ~np.isnan(oof)
-            if valid.sum() >= 2 * cv and y[valid].value_counts().min() >= cv:
-                calibrator = fit_calibrator(oof[valid], y[valid], method=method)
+            oof = cross_val_predict(
+                lgb.LGBMClassifier(**base.get_params()),
+                x,
+                y,
+                cv=StratifiedKFold(n_splits=cv, shuffle=True, random_state=42),
+                method="predict_proba",
+            )[:, 1]
+            calibrator = fit_calibrator(oof, y, method=method)
         except (ValueError, IndexError):
             calibrator = None
 

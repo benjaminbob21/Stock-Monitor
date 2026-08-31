@@ -86,6 +86,7 @@ def evaluate_walk_forward(
     embargo_months: int = LABEL_WINDOW_MONTHS,
     calibration_method: str = "sigmoid",
     feature_columns: tuple[str, ...] | None = None,
+    params: dict | None = None,
 ) -> WalkForwardReport:
     """Run purged walk-forward evaluation and return calibration-aware metrics."""
     frame = frame.reset_index(drop=True)
@@ -102,7 +103,7 @@ def evaluate_walk_forward(
         if y_train.nunique() < 2:
             continue  # can't train a classifier on one class
 
-        model = train_model(frame.loc[train_idx], feature_columns=feature_columns)
+        model = train_model(frame.loc[train_idx], params=params, feature_columns=feature_columns)
         x_train = frame.loc[train_idx, columns]
         x_test = frame.loc[test_idx, columns]
         y_test = frame.loc[test_idx, "label"].astype(int)

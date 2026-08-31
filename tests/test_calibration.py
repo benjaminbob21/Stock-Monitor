@@ -42,30 +42,3 @@ def test_plain_model_scores_uncalibrated(world: SimpleNamespace) -> None:
     assert row is not None
     result = score_row(world.model, row)  # plain LGBMClassifier
     assert result.calibrated is False
-
-
-def test_feature_subset_roundtrip(world: SimpleNamespace) -> None:
-    """A vol-only model trains, persists its subset, and scores without crashing."""
-    from stock_monitor.models.registry import compute_model_version
-
-    model = train_calibrated_model(world.frame, feature_columns=("vol_3m",))
-    assert model.features == ("vol_3m",)
-
-    as_of = world.prices.index[-1].date()
-    row = build_feature_row(world.ticker, world.prices, world.facts, as_of)
-    assert row is not None
-
-    result = score_row(model, row)
-    assert 0 <= result.conviction <= 100
-    # SHAP drivers come from the subset only.
-    assert all(d.feature == "vol_3m" for d in result.drivers)
-
-    # Subset model must version differently from the all-features model.
-    full = train_calibrated_model(world.frame)
-    assert compute_model_version(model) != compute_model_version(full)
-
-
-def test_default_model_keeps_full_feature_set(world: SimpleNamespace) -> None:
-    model = train_calibrated_model(world.frame)
-    from stock_monitor.features.builder import FEATURE_COLUMNS
-    assert model.features == FEATURE_COLUMNS

@@ -31,29 +31,6 @@ BENCHMARK = "SPY"
 HISTORY_YEARS = 8
 
 
-def resolve_feature_columns(model_features: str) -> tuple[str, ...] | None:
-    """Parse the ``model_features`` setting into a training feature subset.
-
-    ``"all"`` (default) returns ``None`` — train on the full FEATURE_COLUMNS set.
-    Otherwise a comma-separated subset of feature names; unknown names raise so a
-    typo in .env fails loudly at training time instead of silently shrinking the
-    model.
-    """
-    raw = (model_features or "all").strip()
-    if raw.lower() in ("", "all"):
-        return None
-    requested = [c.strip() for c in raw.split(",") if c.strip()]
-    unknown = [c for c in requested if c not in FEATURE_COLUMNS]
-    if unknown:
-        raise ValueError(
-            f"model_features contains unknown feature(s): {', '.join(unknown)}. "
-            f"Valid: {', '.join(FEATURE_COLUMNS)}"
-        )
-    if not requested:
-        return None
-    return tuple(requested)
-
-
 @dataclass(frozen=True)
 class TrainingResult:
     model_version: str
@@ -71,7 +48,6 @@ def assemble_training_frame(
     fundamental_provider: FundamentalProvider,
     label_window_months: int,
     history_years: int = HISTORY_YEARS,
-    label_mode: str = "relative",
 ) -> pd.DataFrame:
     """Fetch prices + PIT fundamentals per ticker and pool their labelled frames."""
     end = dt.date.today()
@@ -88,8 +64,7 @@ def assemble_training_frame(
             continue
         facts = fundamental_provider.get_fundamentals(ticker)
         frame = build_training_frame(
-            ticker, prices, facts, benchmark, label_window_months,
-            label_mode=label_mode,
+            ticker, prices, facts, benchmark, label_window_months
         )
         if not frame.empty:
             frames.append(frame)
@@ -106,7 +81,6 @@ def assemble_training_frames(
     horizons: list[int],
     history_years: int = HISTORY_YEARS,
     storage: Storage | None = None,
-    label_mode: str = "relative",
 ) -> dict[int, pd.DataFrame]:
     """Fetch each ticker once and build a labelled frame per horizon (no double fetch).
 
@@ -137,7 +111,6 @@ def assemble_training_frames(
             frame = build_training_frame(
                 ticker, prices, facts, benchmark, horizon,
                 sentiment_lookup=sentiment_lookup,
-                label_mode=label_mode,
             )
             if not frame.empty:
                 by_horizon[horizon].append(frame)
@@ -156,7 +129,6 @@ def _log_mlflow(
     settings: Settings,
     params: dict,
     calibration: str,
-    feature_columns: tuple[str, ...] = FEATURE_COLUMNS,
 ) -> None:
     # MLflow 3.x gates the local file store behind an opt-in; mlruns/ is gitignored
     # and the right weight for a solo project (build-plan §4).
@@ -167,9 +139,8 @@ def _log_mlflow(
         mlflow.set_tag("model_version", version)
         mlflow.log_params(params)
         mlflow.log_param("label_window_months", settings.label_window_months)
-        mlflow.log_param("label_mode", settings.label_mode)
         mlflow.log_param("calibration", calibration)
-        mlflow.log_param("features", ",".join(feature_columns))
+        mlflow.log_param("features", ",".join(FEATURE_COLUMNS))
         mlflow.log_metrics(
             {
                 "rows_trained": float(len(frame)),
@@ -213,8 +184,6 @@ def run_training(
 
     long_h = settings.label_window_months
     short_h = settings.label_window_months_short
-    label_mode = settings.label_mode
-    feature_columns = resolve_feature_columns(settings.model_features)
     with Storage(settings.db_path) as store:
         frames = assemble_training_frames(
             watchlist,
@@ -223,7 +192,6 @@ def run_training(
             [long_h, short_h],
             history_years=settings.training_history_years,
             storage=store,
-            label_mode=label_mode,
         )
         pooled = frames.get(long_h, pd.DataFrame())
         if pooled.empty:
@@ -234,7 +202,7 @@ def run_training(
         store.upsert_features(valid)
         store.record_quarantine(quarantined)
 
-    model = train_calibrated_model(valid, feature_columns=feature_columns)
+    model = train_calibrated_model(valid)
     version = compute_model_version(model)
     save_model(model, settings.model_path)
 
@@ -246,21 +214,19 @@ def run_training(
         valid_short, _, _ = validate_features(short_pooled)
         try:
             short_model = train_calibrated_model(
-                valid_short, params=SHORT_HORIZON_LGBM_PARAMS,
-                feature_columns=feature_columns,
+                valid_short, params=SHORT_HORIZON_LGBM_PARAMS
             )
             save_model(short_model, settings.model_path_short)
         except ValueError:
             pass
 
-    x = valid[list(model.features)]
+    x = valid[list(FEATURE_COLUMNS)]
     accuracy = float((model.base.predict(x) == valid["label"].astype(int)).mean())
     calibration = model.calibrator.method if model.calibrator is not None else "none"
 
     if log_mlflow:
         _log_mlflow(
-            valid, report, version, accuracy, settings, model.base.get_params(),
-            calibration, feature_columns=model.features,
+            valid, report, version, accuracy, settings, model.base.get_params(), calibration
         )
 
     return TrainingResult(

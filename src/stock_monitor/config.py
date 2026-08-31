@@ -66,15 +66,6 @@ class Settings(BaseSettings):
     model_path_short: str = "models/latest_3m.joblib"
     label_window_months_short: int = 3
 
-    # Label definition for training: "relative" = forward return beats the benchmark
-    # (any margin); "excess" = beats it by more than 5% (filters coin-flip rows).
-    label_mode: str = "relative"
-
-    # Feature subset the model trains/scores on. "all" = the full FEATURE_COLUMNS
-    # set; otherwise a comma-separated subset (e.g. "vol_3m"). The trained artifact
-    # carries its own feature list, so scoring always matches training.
-    model_features: str = "all"
-
     # How many years of price history to pull when TRAINING. Deeper = more labelled
     # rows + a richer similar-setups base rate. Tiingo's free tier already returns
     # ~35 years for US large-caps, so this costs nothing. (Fundamentals coverage from

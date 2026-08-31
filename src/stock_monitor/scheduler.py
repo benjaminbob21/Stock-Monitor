@@ -536,8 +536,7 @@ def run_backtest_job(settings: Settings) -> None:
 
     tickers = [t.upper() for t in get_universe()]
     frame, price_frames, benchmark = _fetch(
-        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months,
-        label_mode=settings.label_mode,
+        tickers, YFinanceProvider(), EdgarProvider(), settings.label_window_months
     )
     result = run_backtest(
         frame,

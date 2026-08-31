@@ -20,12 +20,6 @@ from stock_monitor.models.calibration import CalibratedModel
 Scoreable = lgb.LGBMClassifier | CalibratedModel
 
 
-def _model_features(model: Scoreable) -> tuple[str, ...]:
-    if isinstance(model, CalibratedModel):
-        return model.features
-    return FEATURE_COLUMNS
-
-
 def _base_and_calibration(model: Scoreable) -> tuple[lgb.LGBMClassifier, str]:
     if isinstance(model, CalibratedModel):
         method = model.calibrator.method if model.calibrator is not None else "none"
@@ -38,7 +32,7 @@ def compute_model_version(model: Scoreable, extra: str = "") -> str:
     base, calibration = _base_and_calibration(model)
     payload = json.dumps(
         {
-            "features": list(_model_features(model)),
+            "features": list(FEATURE_COLUMNS),
             "params": {k: str(v) for k, v in sorted(base.get_params().items())},
             "calibration": calibration,
             "extra": extra,

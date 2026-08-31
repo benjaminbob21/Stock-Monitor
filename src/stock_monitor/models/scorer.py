@@ -88,12 +88,23 @@ class ScoreResult:
     calibrated: bool = False
 
 
-def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClassifier:
+def _model_features(model: Scoreable) -> tuple[str, ...]:
+    """Feature columns the model was fit on (subset-aware; defaults to all)."""
+    if isinstance(model, CalibratedModel):
+        return model.features
+    return FEATURE_COLUMNS
+
+
+def train_model(
+    frame: pd.DataFrame, params: dict | None = None, feature_columns: tuple[str, ...] | None = None
+) -> lgb.LGBMClassifier:
     """Train a small LightGBM classifier on a labelled feature frame.
 
     ``params`` overrides individual LightGBM hyperparameters on top of the defaults —
     used to regularize the short-horizon model more heavily (3-month relative returns
     are mostly noise, so the default-capacity model saturates and memorizes them).
+    ``feature_columns`` restricts training to a subset (e.g. vol-only); the caller is
+    responsible for carrying the same subset to predict time.
     """
     if frame.empty or frame["label"].nunique() < 2:
         raise ValueError(
@@ -101,7 +112,8 @@ def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClas
             "Widen the watchlist or history window."
         )
 
-    x = frame[list(FEATURE_COLUMNS)]
+    columns = list(feature_columns) if feature_columns is not None else list(FEATURE_COLUMNS)
+    x = frame[columns]
     y = frame["label"].astype(int)
 
     model = lgb.LGBMClassifier(**{**_DEFAULT_LGBM_PARAMS, **(params or {})})
@@ -114,6 +126,7 @@ def train_calibrated_model(
     method: str = "sigmoid",
     cv: int = 3,
     params: dict | None = None,
+    feature_columns: tuple[str, ...] | None = None,
 ) -> CalibratedModel:
     """Train the base model and fit a probability calibrator on out-of-fold preds.
 
@@ -124,9 +137,12 @@ def train_calibrated_model(
 
     ``params`` is forwarded to the base model so callers can regularize a specific
     horizon (the out-of-fold model inherits the same params via ``get_params``).
+    ``feature_columns`` restricts training to a subset and is recorded on the
+    returned artifact so scoring uses the identical columns.
     """
-    base = train_model(frame, params=params)
-    x = frame[list(FEATURE_COLUMNS)]
+    base = train_model(frame, params=params, feature_columns=feature_columns)
+    columns = list(feature_columns) if feature_columns is not None else list(FEATURE_COLUMNS)
+    x = frame[columns]
     y = frame["label"].astype(int)
 
     calibrator: Calibrator | None = None
@@ -160,7 +176,9 @@ def train_calibrated_model(
         except (ValueError, IndexError):
             calibrator = None
 
-    return CalibratedModel(base=base, calibrator=calibrator)
+    return CalibratedModel(
+        base=base, calibrator=calibrator, feature_columns=tuple(columns)
+    )
 
 
 def _unwrap(model: Scoreable) -> tuple[lgb.LGBMClassifier, Calibrator | None]:
@@ -176,7 +194,8 @@ def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
     we only need the number, not a full explanation.
     """
     base, calibrator = _unwrap(model)
-    x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
+    columns = list(_model_features(model))
+    x = pd.DataFrame([{f: row.get(f) for f in columns}], columns=columns)
     raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
     return int(round(proba * 100))
@@ -229,7 +248,8 @@ def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
     while SHAP still explains the underlying tree model.
     """
     base, calibrator = _unwrap(model)
-    x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
+    columns = list(_model_features(model))
+    x = pd.DataFrame([{f: row.get(f) for f in columns}], columns=columns)
 
     raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
@@ -241,7 +261,7 @@ def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
     ranked = sorted(
         (
             Driver(feature=f, value=_as_float(row.get(f)), shap=float(s))
-            for f, s in zip(FEATURE_COLUMNS, shap_vec, strict=True)
+            for f, s in zip(columns, shap_vec, strict=True)
         ),
         key=lambda d: abs(d.shap),
         reverse=True,

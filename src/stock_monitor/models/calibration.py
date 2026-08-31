@@ -13,12 +13,14 @@ probability via ``calibrator``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import lightgbm as lgb
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
+
+from stock_monitor.features.builder import FEATURE_COLUMNS
 
 
 @dataclass
@@ -39,10 +41,21 @@ class Calibrator:
 
 @dataclass
 class CalibratedModel:
-    """A base LightGBM classifier plus an optional probability calibrator."""
+    """A base LightGBM classifier plus an optional probability calibrator.
+
+    ``feature_columns`` records the exact feature subset the base model was FIT on
+    (LightGBM requires the same columns at predict time). ``None`` means the full
+    ``FEATURE_COLUMNS`` set — the pre-subset behaviour, kept for artifacts saved
+    before this field existed.
+    """
 
     base: lgb.LGBMClassifier
     calibrator: Calibrator | None = None
+    feature_columns: tuple[str, ...] | None = field(default=None)
+
+    @property
+    def features(self) -> tuple[str, ...]:
+        return self.feature_columns if self.feature_columns is not None else FEATURE_COLUMNS
 
 
 def fit_calibrator(raw: object, y: object, method: str = "sigmoid") -> Calibrator:

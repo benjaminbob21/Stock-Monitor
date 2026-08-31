@@ -89,3 +89,23 @@ def test_training_frame_has_labels_and_features() -> None:
     assert set(FEATURE_COLUMNS).issubset(frame.columns)
     # Ticker drifts faster than benchmark -> should mostly beat it.
     assert frame["label"].mean() > 0.5
+
+
+def test_excess_label_mode_requires_margin() -> None:
+    """'excess' labels 1 only when the ticker beats the benchmark by > 5%."""
+    # Ticker drifts 0.00015/day (~+3.8%/yr over benchmark) — beats SPY but NOT by 5%.
+    prices = _synthetic_prices(days=900, drift=0.00025)
+    benchmark = _synthetic_prices(days=900, drift=0.0001)
+
+    relative = build_training_frame(
+        "T", prices, _facts(), benchmark, label_window_months=12, label_mode="relative"
+    )
+    excess = build_training_frame(
+        "T", prices, _facts(), benchmark, label_window_months=12, label_mode="excess"
+    )
+
+    assert not relative.empty and not excess.empty
+    # Same rows, same features — only the label definition differs.
+    assert len(relative) == len(excess)
+    assert relative["label"].mean() > 0.5  # beats SPY most months...
+    assert excess["label"].mean() < relative["label"].mean()  # ...but rarely by 5%+

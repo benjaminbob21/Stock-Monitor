@@ -85,10 +85,12 @@ def evaluate_walk_forward(
     n_splits: int = 4,
     embargo_months: int = LABEL_WINDOW_MONTHS,
     calibration_method: str = "sigmoid",
+    feature_columns: tuple[str, ...] | None = None,
 ) -> WalkForwardReport:
     """Run purged walk-forward evaluation and return calibration-aware metrics."""
     frame = frame.reset_index(drop=True)
     folds = walk_forward_folds(frame["as_of"], n_splits, embargo_months)
+    columns = list(feature_columns) if feature_columns is not None else list(FEATURE_COLUMNS)
 
     oof_y: list[int] = []
     oof_raw: list[float] = []
@@ -100,9 +102,9 @@ def evaluate_walk_forward(
         if y_train.nunique() < 2:
             continue  # can't train a classifier on one class
 
-        model = train_model(frame.loc[train_idx])
-        x_train = frame.loc[train_idx, list(FEATURE_COLUMNS)]
-        x_test = frame.loc[test_idx, list(FEATURE_COLUMNS)]
+        model = train_model(frame.loc[train_idx], feature_columns=feature_columns)
+        x_train = frame.loc[train_idx, columns]
+        x_test = frame.loc[test_idx, columns]
         y_test = frame.loc[test_idx, "label"].astype(int)
 
         raw_train = np.asarray(model.predict_proba(x_train))[:, 1]

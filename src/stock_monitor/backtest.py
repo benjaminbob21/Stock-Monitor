@@ -59,11 +59,13 @@ def run_backtest(
     cost_bps: float = 10.0,
     embargo_months: int = LABEL_WINDOW_MONTHS,
     min_train: int = 24,
+    feature_columns: tuple[str, ...] | None = None,
 ) -> BacktestResult:
     """Run a purged walk-forward, cost-aware monthly-rebalance backtest."""
     frame = frame.reset_index(drop=True).copy()
     frame["as_of_ts"] = pd.to_datetime(frame["as_of"])
     dates = sorted(frame["as_of_ts"].unique())
+    columns = list(feature_columns) if feature_columns is not None else list(FEATURE_COLUMNS)
 
     equity = 1.0
     bench_equity = 1.0
@@ -87,8 +89,8 @@ def run_backtest(
         if today.empty:
             continue
 
-        model = train_model(train)
-        scores = np.asarray(model.predict_proba(today[list(FEATURE_COLUMNS)]))[:, 1]
+        model = train_model(train, feature_columns=feature_columns)
+        scores = np.asarray(model.predict_proba(today[columns]))[:, 1]
         ranked = today.assign(_score=scores).sort_values("_score", ascending=False)
         selected = ranked.head(top_k)["ticker"].tolist()
         if not selected:
@@ -160,6 +162,7 @@ def _fetch(
     price_provider: PriceProvider,
     fundamental_provider: FundamentalProvider,
     label_window_months: int,
+    label_mode: str = "relative",
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame], pd.DataFrame]:
     end = dt.date.today()
     start = end - dt.timedelta(days=365 * HISTORY_YEARS)
@@ -177,7 +180,8 @@ def _fetch(
         price_frames[ticker] = prices
         facts = fundamental_provider.get_fundamentals(ticker)
         frame = build_training_frame(
-            ticker, prices, facts, benchmark, label_window_months
+            ticker, prices, facts, benchmark, label_window_months,
+            label_mode=label_mode,
         )
         if not frame.empty:
             frames.append(frame)
@@ -230,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         YFinanceProvider(),
         EdgarProvider(),
         settings.label_window_months,
+        label_mode=settings.label_mode,
     )
     result = run_backtest(
         frame,

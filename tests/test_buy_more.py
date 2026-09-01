@@ -91,7 +91,6 @@ def test_position_view_reports_multiple_lots() -> None:
         store.add_lot(
             position_id="p1", bought_at=dt.datetime.now(), price=20.0, quantity=10.0
         )
-        position = store.get_position("p1")
         view = store.get_position("p1")  # row with lots attached
         assert view["quantity"] == pytest.approx(20.0)
         assert view["entry_price"] == pytest.approx(21.50)
@@ -109,7 +108,7 @@ def test_buy_into_leg_dollars_grows_budget_and_vwaps() -> None:
         basket = create_basket(
             "Duo", 10_000.0, ["NVDA", "MSFT"], [40.0, 60.0], prices, store
         )
-        nvda_leg = next(l for l in basket["items"] if l["ticker"] == "NVDA")
+        nvda_leg = next(item for item in basket["items"] if item["ticker"] == "NVDA")
 
         # Price drops to 80; user buys $800 more → 10 shares at the new price.
         prices.quotes["NVDA"] = 80.0
@@ -155,3 +154,64 @@ def test_buy_into_sold_leg_rejected() -> None:
         store.sell_basket_item(leg_id, dt.datetime.now(), 110.0)
         with pytest.raises(BasketError, match="sold"):
             buy_into_leg(leg_id, prices, store, shares=1.0)
+
+
+# ------------------------------------------------- explicit fill price / date
+
+
+def test_buy_into_leg_explicit_price_and_date() -> None:
+    """Logging an earlier trade: explicit price wins over the live quote."""
+    prices = FakePrices({"NVDA": 100.0})  # live quote would be 100
+    when = dt.datetime(2026, 8, 15, 9, 30)
+    with _store() as store:
+        basket = create_basket("Solo", 1_000.0, ["NVDA"], [100.0], prices, store)
+        leg = basket["items"][0]
+        # Leg seeded: 10 sh @ 100 (budget 1000). Top-up $500 @ explicit 125.
+        buy_into_leg(
+            leg["id"], prices, store, dollars=500.0, price=125.0, bought_at=when
+        )
+        updated = store.get_basket(basket["id"])
+        updated["items"] = store.list_basket_items(basket["id"])
+        leg2 = updated["items"][0]
+        assert leg2["shares"] == pytest.approx(10.0 + 500.0 / 125.0)
+        # VWAP of 10@100 + 4@125
+        assert leg2["entry_price"] == pytest.approx((10 * 100 + 4 * 125) / 14.0)
+        # Budget grows by actual cost regardless of price source.
+        assert leg2["budget"] == pytest.approx(1_500.0)
+        lots = leg2["lots"]
+        # Lots sort oldest-first by bought_at: the backdated $500@125 buy
+        # (Aug 15) sorts BEFORE the seeded lot (today).
+        assert lots[0]["price"] == pytest.approx(125.0)
+        assert lots[0]["bought_at"] == when.isoformat()
+        assert lots[-1]["price"] == pytest.approx(100.0)
+
+
+def test_buy_into_leg_rejects_bad_price() -> None:
+    prices = FakePrices({"NVDA": 100.0})
+    with _store() as store:
+        basket = create_basket("Solo", 1_000.0, ["NVDA"], [100.0], prices, store)
+        leg_id = basket["items"][0]["id"]
+        with pytest.raises(BasketError, match="price"):
+            buy_into_leg(leg_id, prices, store, dollars=100.0, price=0.0)
+        with pytest.raises(BasketError, match="price"):
+            buy_into_leg(leg_id, prices, store, dollars=100.0, price=-3.0)
+
+
+def test_add_lot_backdated() -> None:
+    """Storage honours arbitrary bought_at (UI date picker for late logging)."""
+    with _store() as store:
+        store.add_position(
+            "p1", "BLBD", dt.datetime(2026, 8, 1, 12), 23.0, 82, "buy", [], quantity=10.0
+        )
+        store.add_lot(
+            position_id="p1",
+            bought_at=dt.datetime(2026, 7, 10, 15, 45),
+            price=19.0,
+            quantity=5.0,
+        )
+        position = store.get_position("p1")
+        assert position["entry_price"] == pytest.approx((10 * 23 + 5 * 19) / 15.0)
+        lots = position["lots"]
+        # Oldest-first ordering: the backdated Jul-10 lot comes first.
+        assert lots[0]["bought_at"] == "2026-07-10T15:45:00"
+        assert lots[0]["price"] == pytest.approx(19.0)

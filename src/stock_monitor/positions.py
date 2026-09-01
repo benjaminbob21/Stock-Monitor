@@ -197,15 +197,17 @@ def add_to_position(
     short_model: Scoreable | None = None,
     earnings_provider: object | None = None,
     note: str | None = None,
+    bought_at: dt.datetime | None = None,
 ) -> dict:
     """Record an additional buy into an existing open position.
 
-    The buy is snapshotted at today's live price (or an explicit ``price``),
-    appended as a new lot, and the position's entry_price becomes the
-    volume-weighted average across all lots. Entry conviction stays the
-    original snapshot — it marks when the thesis was first formed.
+    The buy is snapshotted at today's live price (or an explicit ``price``,
+    e.g. when logging a trade taken earlier), appended as a new lot, and the
+    position's entry_price becomes the volume-weighted average across all
+    lots. Entry conviction stays the original snapshot — it marks when the
+    thesis was first formed.
 
-    ``dollars`` sizes the buy in currency: shares = dollars / live price.
+    ``dollars`` sizes the buy in currency: shares = dollars / price.
     Exactly one of ``quantity``/``dollars`` must be given.
     """
     if (quantity is not None) == (dollars is not None):
@@ -214,6 +216,8 @@ def add_to_position(
         raise ValueError("dollars must be positive")
     if quantity is not None and quantity <= 0:
         raise ValueError("quantity must be positive")
+    if price is not None and price <= 0:
+        raise ValueError("price must be positive")
     position = storage.get_position(position_id)
     if position is None:
         raise KeyError(position_id)
@@ -238,7 +242,7 @@ def add_to_position(
         quantity = dollars / price
     updated = storage.add_lot(
         position_id=position_id,
-        bought_at=dt.datetime.now(),
+        bought_at=bought_at or dt.datetime.now(),
         price=float(price),
         quantity=float(quantity or 0.0),
         note=note,

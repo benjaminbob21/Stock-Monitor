@@ -11,6 +11,8 @@ export async function POST(
   const shares = searchParams.get("shares");
   const dollars = searchParams.get("dollars");
   const note = searchParams.get("note");
+  const price = searchParams.get("price");
+  const boughtAt = searchParams.get("bought_at");
   if ((shares == null || shares === "") === (dollars == null || dollars === "")) {
     return NextResponse.json(
       { detail: "provide exactly one of shares or dollars" },
@@ -21,6 +23,8 @@ export async function POST(
   if (shares) qs.set("shares", shares);
   if (dollars) qs.set("dollars", dollars);
   if (note) qs.set("note", note);
+  if (price) qs.set("price", price);
+  if (boughtAt) qs.set("bought_at", boughtAt);
   try {
     const upstream = await backendFetch(
       `/baskets/legs/${encodeURIComponent(id)}/buy?${qs.toString()}`,

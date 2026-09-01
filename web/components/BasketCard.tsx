@@ -39,12 +39,23 @@ export function BasketCard({
 }: {
   basket: BasketView;
   onClose: (id: string) => void;
-  onBuyLeg?: (legId: string, params: { shares?: number; dollars?: number; note?: string }) => void;
+  onBuyLeg?: (
+    legId: string,
+    params: {
+      shares?: number;
+      dollars?: number;
+      note?: string;
+      price?: number;
+      boughtAt?: string;
+    },
+  ) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [buyLegId, setBuyLegId] = useState<string | null>(null);
   const [buyMode, setBuyMode] = useState<"dollars" | "shares">("dollars");
   const [buyAmount, setBuyAmount] = useState("");
+  const [buyPrice, setBuyPrice] = useState("");
+  const [buyDate, setBuyDate] = useState("");
   const [buyError, setBuyError] = useState<string | null>(null);
   const ret = basket.return_pct;
   const bench = basket.benchmark_return_pct;
@@ -55,13 +66,22 @@ export function BasketCard({
       setBuyError("Enter a positive amount");
       return;
     }
+    const effPrice = buyPrice.trim() ? Number(buyPrice) : undefined;
+    if (effPrice !== undefined && (!Number.isFinite(effPrice) || effPrice <= 0)) {
+      setBuyError("Price must be a positive number");
+      return;
+    }
     setBuyError(null);
     onBuyLeg?.(leg.id, {
       shares: buyMode === "shares" ? raw : undefined,
       dollars: buyMode === "dollars" ? raw : undefined,
+      price: effPrice,
+      boughtAt: buyDate.trim() || undefined,
     });
     setBuyLegId(null);
     setBuyAmount("");
+    setBuyPrice("");
+    setBuyDate("");
   };
 
   return (
@@ -220,7 +240,7 @@ export function BasketCard({
             placeholder={
               buyMode === "dollars"
                 ? "Amount in $ (e.g. 500)"
-                : "Number of shares"
+                : "Shares (e.g. 10)"
             }
             value={buyAmount}
             onChange={(e) => {
@@ -234,6 +254,31 @@ export function BasketCard({
               }
             }}
           />
+          <input
+            className="buymore-input"
+            type="number"
+            min="0"
+            step="any"
+            placeholder={`Fill price — leave blank for now ($${(basket.legs.find((l) => l.id === buyLegId)?.current_price ?? basket.legs.find((l) => l.id === buyLegId)?.entry_price ?? 0).toFixed(2)})`}
+            value={buyPrice}
+            onChange={(e) => {
+              setBuyPrice(e.target.value);
+              setBuyError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const leg = basket.legs.find((l) => l.id === buyLegId);
+                if (leg) submitLegBuy(leg);
+              }
+            }}
+          />
+          <input
+            className="buymore-input"
+            type="date"
+            title="Leave blank if you bought today"
+            value={buyDate}
+            onChange={(e) => setBuyDate(e.target.value)}
+          />
           {buyError && <div className="buymore-error">{buyError}</div>}
           <button
             type="button"
@@ -246,8 +291,8 @@ export function BasketCard({
             Record buy
           </button>
           <div className="poslabel">
-            Leg entry becomes the average across all buys; portfolio capital grows by
-            the cost.
+            Leg entry becomes the average across all buys; portfolio capital grows
+            by the cost. Set fill price + date if logging an earlier trade.
           </div>
         </div>
       )}

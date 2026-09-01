@@ -75,13 +75,24 @@ export function PositionCard({
   onSell: (id: string) => void;
   onDelete?: (id: string) => void;
   onLookup: (ticker: string) => void;
-  onBuyMore?: (id: string, params: { shares?: number; dollars?: number; note?: string }) => void;
+  onBuyMore?: (
+    id: string,
+    params: {
+      shares?: number;
+      dollars?: number;
+      note?: string;
+      price?: number;
+      boughtAt?: string;
+    },
+  ) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [buyOpen, setBuyOpen] = useState(false);
   const [buyMode, setBuyMode] = useState<"dollars" | "shares">("dollars");
   const [buyAmount, setBuyAmount] = useState("");
+  const [buyPrice, setBuyPrice] = useState("");
+  const [buyDate, setBuyDate] = useState("");
   const [buyNote, setBuyNote] = useState("");
   const [buyError, setBuyError] = useState<string | null>(null);
   const color = SIGNAL_COLORS[p.signal] ?? "var(--gray)";
@@ -95,22 +106,23 @@ export function PositionCard({
       setBuyError("Enter a positive amount");
       return;
     }
-    const shares =
-      buyMode === "shares"
-        ? raw
-        : undefined;
-    const dollars =
-      buyMode === "dollars"
-        ? raw
-        : undefined;
+    const effPrice = buyPrice.trim() ? Number(buyPrice) : undefined;
+    if (effPrice !== undefined && (!Number.isFinite(effPrice) || effPrice <= 0)) {
+      setBuyError("Price must be a positive number");
+      return;
+    }
     setBuyError(null);
     onBuyMore?.(p.id, {
-      shares,
-      dollars,
+      shares: buyMode === "shares" ? raw : undefined,
+      dollars: buyMode === "dollars" ? raw : undefined,
+      price: effPrice,
+      boughtAt: buyDate.trim() || undefined,
       note: buyNote.trim() || undefined,
     });
     setBuyOpen(false);
     setBuyAmount("");
+    setBuyPrice("");
+    setBuyDate("");
     setBuyNote("");
   };
 
@@ -366,7 +378,7 @@ export function PositionCard({
             placeholder={
               buyMode === "dollars"
                 ? "Amount in $ (e.g. 500)"
-                : `Shares at ${money(p.current_price ?? p.entry_price)}`
+                : "Shares (e.g. 10)"
             }
             value={buyAmount}
             onChange={(e) => {
@@ -379,15 +391,39 @@ export function PositionCard({
           />
           <input
             className="buymore-input"
+            type="number"
+            min="0"
+            step="any"
+            placeholder={`Fill price — leave blank for now ($${(p.current_price ?? p.entry_price).toFixed(2)})`}
+            value={buyPrice}
+            onChange={(e) => {
+              setBuyPrice(e.target.value);
+              setBuyError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitBuy();
+            }}
+          />
+          <input
+            className="buymore-input"
+            type="date"
+            title="Leave blank if you bought today"
+            value={buyDate}
+            onChange={(e) => setBuyDate(e.target.value)}
+          />
+          <input
+            className="buymore-input"
             type="text"
             placeholder="Note (optional — e.g. 'bought the dip')"
             value={buyNote}
             onChange={(e) => setBuyNote(e.target.value)}
           />
-          {buyMode === "dollars" && Number(buyAmount) > 0 && (
+          {Number(buyAmount) > 0 && (
             <div className="poslabel">
-              ≈ {(Number(buyAmount) / (p.current_price ?? p.entry_price)).toFixed(4)} sh @{" "}
-              {money(p.current_price ?? p.entry_price)}
+              {buyMode === "dollars"
+                ? `≈ ${(Number(buyAmount) / (buyPrice.trim() ? Number(buyPrice) : p.current_price ?? p.entry_price)).toFixed(4)} sh @ $${(buyPrice.trim() ? Number(buyPrice) : p.current_price ?? p.entry_price).toFixed(2)}`
+                : `= $${(Number(buyAmount) * (buyPrice.trim() ? Number(buyPrice) : p.current_price ?? p.entry_price)).toFixed(2)} at $${(buyPrice.trim() ? Number(buyPrice) : p.current_price ?? p.entry_price).toFixed(2)}`}
+              {buyDate && ` · dated ${buyDate}`}
             </div>
           )}
           {buyError && <div className="buymore-error">{buyError}</div>}
@@ -395,7 +431,8 @@ export function PositionCard({
             Record buy
           </button>
           <div className="poslabel">
-            Entry price becomes the average across all buys.
+            Entry price becomes the average across all buys. Set fill price +
+            date if you're logging a trade you took earlier.
           </div>
         </div>
       )}

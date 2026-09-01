@@ -1097,6 +1097,22 @@ def add_position(ticker: str, state: StateDep, quantity: float = 1.0) -> dict[st
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _parse_bought_at(raw: str | None) -> dt.datetime | None:
+    """Parse an ISO date/datetime query param (lot timestamp override)."""
+    if raw is None or not raw.strip():
+        return None
+    value = raw.strip()
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"bad bought_at (use YYYY-MM-DD): {exc}"
+        ) from exc
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
 @app.post("/positions/{position_id}/buy")
 def buy_more_position(
     position_id: str,
@@ -1104,11 +1120,14 @@ def buy_more_position(
     shares: float | None = None,
     dollars: float | None = None,
     note: str | None = None,
+    price: float | None = None,
+    bought_at: str | None = None,
 ) -> dict[str, object]:
     """Record an additional buy into an existing open position.
 
-    Priced at the live quote when ``dollars`` is given (shares = dollars/price);
-    entry_price becomes the volume-weighted average across all buys.
+    Priced at the live quote unless ``price`` is given (e.g. logging a trade
+    taken earlier); entry_price becomes the volume-weighted average across
+    all buys. ``bought_at`` (ISO date/datetime) overrides the lot timestamp.
     """
     _require_ready(state)
     if (shares is None) == (dollars is None):
@@ -1119,6 +1138,9 @@ def buy_more_position(
         raise HTTPException(status_code=422, detail="shares must be positive")
     if dollars is not None and dollars <= 0:
         raise HTTPException(status_code=422, detail="dollars must be positive")
+    if price is not None and price <= 0:
+        raise HTTPException(status_code=422, detail="price must be positive")
+    lot_time = _parse_bought_at(bought_at)
     with Storage(state.db_path) as store:  # type: ignore[arg-type]
         if store.get_position(position_id) is None:
             raise HTTPException(status_code=404, detail="position not found")
@@ -1127,6 +1149,7 @@ def buy_more_position(
                 position_id,
                 quantity=shares,
                 dollars=dollars,
+                price=price,
                 model=state.model,  # type: ignore[arg-type]
                 model_version=state.model_version or "unknown",
                 price_provider=state.price_provider,  # type: ignore[arg-type]
@@ -1135,6 +1158,7 @@ def buy_more_position(
                 short_model=state.model_short,
                 earnings_provider=state.earnings_provider,
                 note=note,
+                bought_at=lot_time,
             )
         except TickerDataUnavailable as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1370,11 +1394,15 @@ def buy_into_leg_endpoint(
     shares: float | None = None,
     dollars: float | None = None,
     note: str | None = None,
+    price: float | None = None,
+    bought_at: str | None = None,
 ) -> dict[str, object]:
     """Add capital to one open leg of a joint portfolio.
 
-    Priced at the live quote; the leg's entry_price becomes the volume-weighted
-    average across its buys and its budget grows by the actual cost.
+    Priced at the live quote unless ``price`` is given (e.g. logging a trade
+    taken earlier); the leg's entry_price becomes the volume-weighted average
+    across its buys and its budget grows by the actual cost. ``bought_at``
+    (ISO date/datetime) overrides the lot timestamp.
     """
     from stock_monitor.baskets import BasketError, buy_into_leg
 
@@ -1383,6 +1411,9 @@ def buy_into_leg_endpoint(
         raise HTTPException(
             status_code=422, detail="provide exactly one of shares or dollars"
         )
+    if price is not None and price <= 0:
+        raise HTTPException(status_code=422, detail="price must be positive")
+    lot_time = _parse_bought_at(bought_at)
     try:
         with Storage(state.db_path) as store:  # type: ignore[arg-type]
             updated = buy_into_leg(
@@ -1392,6 +1423,8 @@ def buy_into_leg_endpoint(
                 shares=shares,
                 dollars=dollars,
                 note=note,
+                price=price,
+                bought_at=lot_time,
             )
     except BasketError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

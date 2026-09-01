@@ -244,11 +244,14 @@ def buy_into_leg(
     shares: float | None = None,
     dollars: float | None = None,
     note: str | None = None,
+    price: float | None = None,
+    bought_at: dt.datetime | None = None,
 ) -> dict | None:
     """Add capital to an open basket leg and return the updated basket.
 
     Exactly one of ``shares``/``dollars`` must be given. The buy is priced at
-    the live quote (entry-price fallback), appended as a lot, and the leg's
+    the live quote (entry-price fallback) or an explicit ``price`` (e.g. when
+    logging a trade taken earlier), appended as a lot, and the leg's
     entry_price becomes the volume-weighted average across its lots. The leg's
     budget grows by the actual cost of the buy, so basket-level
     ``pnl = value − budget`` stays honest without touching pct splits.
@@ -259,6 +262,8 @@ def buy_into_leg(
         raise BasketError("shares must be positive")
     if dollars is not None and dollars <= 0:
         raise BasketError("dollars must be positive")
+    if price is not None and price <= 0:
+        raise BasketError("price must be positive")
 
     for basket in storage.list_baskets():
         items = storage.list_basket_items(basket["id"])
@@ -267,18 +272,20 @@ def buy_into_leg(
             continue
         if match["status"] != "open":
             raise BasketError("cannot buy into a sold leg")
-        quote = _quote_or_last_close(
-            match["ticker"], price_provider, dt.date.today()
-        ) or float(match["entry_price"])
+        if price is None:
+            quote = _quote_or_last_close(
+                match["ticker"], price_provider, dt.date.today()
+            ) or float(match["entry_price"])
+            price = quote
         buy_shares = (
-            float(shares) if shares is not None else float(dollars or 0.0) / quote
+            float(shares) if shares is not None else float(dollars or 0.0) / price
         )
         if buy_shares <= 0:
             raise BasketError("computed share count is not positive")
         storage.add_basket_lot(
             item_id=item_id,
-            bought_at=dt.datetime.now(),
-            price=quote,
+            bought_at=bought_at or dt.datetime.now(),
+            price=price,
             shares=buy_shares,
             note=note,
         )

@@ -512,12 +512,20 @@ export default function Home() {
   const buyMorePosition = useCallback(
     async (
       id: string,
-      params: { shares?: number; dollars?: number; note?: string },
+      params: {
+        shares?: number;
+        dollars?: number;
+        note?: string;
+        price?: number;
+        boughtAt?: string;
+      },
     ) => {
       const qs = new URLSearchParams();
       if (params.shares !== undefined) qs.set("shares", String(params.shares));
       if (params.dollars !== undefined) qs.set("dollars", String(params.dollars));
       if (params.note) qs.set("note", params.note);
+      if (params.price !== undefined) qs.set("price", String(params.price));
+      if (params.boughtAt) qs.set("bought_at", params.boughtAt);
       try {
         const res = await fetch(
           `/api/positions/${encodeURIComponent(id)}/buy?${qs.toString()}`,
@@ -539,12 +547,20 @@ export default function Home() {
   const buyBasketLeg = useCallback(
     async (
       legId: string,
-      params: { shares?: number; dollars?: number; note?: string },
+      params: {
+        shares?: number;
+        dollars?: number;
+        note?: string;
+        price?: number;
+        boughtAt?: string;
+      },
     ) => {
       const qs = new URLSearchParams();
       if (params.shares !== undefined) qs.set("shares", String(params.shares));
       if (params.dollars !== undefined) qs.set("dollars", String(params.dollars));
       if (params.note) qs.set("note", params.note);
+      if (params.price !== undefined) qs.set("price", String(params.price));
+      if (params.boughtAt) qs.set("bought_at", params.boughtAt);
       try {
         const res = await fetch(
           `/api/baskets/legs/${encodeURIComponent(legId)}/buy?${qs.toString()}`,

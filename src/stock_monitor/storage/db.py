@@ -645,7 +645,12 @@ class Storage:
             FROM positions ORDER BY added_at DESC
             """
         ).fetchall()
-        return [self._position_row(r) for r in rows]
+        # Attach buy lots so views built from the list (e.g. /positions)
+        # can show per-lot history without a second round-trip per position.
+        positions = [self._position_row(r) for r in rows]
+        for position in positions:
+            position["lots"] = self.list_lots(position["id"])
+        return positions
 
     def get_position(self, position_id: str) -> dict | None:
         row = self._con.execute(

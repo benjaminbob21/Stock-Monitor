@@ -154,6 +154,107 @@ def open_position(
     )
 
 
+def _lot_summary(lots: list[dict], current_price: float | None) -> dict:
+    """Aggregate a position's buy lots into blended-cost + per-lot P&L numbers."""
+    total_qty = sum(lot["quantity"] for lot in lots)
+    total_cost = sum(lot["quantity"] * lot["price"] for lot in lots)
+    avg_price = total_cost / total_qty if total_qty else None
+    per_lot = []
+    for lot in lots:
+        entry = {
+            "bought_at": lot["bought_at"],
+            "price": lot["price"],
+            "quantity": lot["quantity"],
+        }
+        if note := lot.get("note"):
+            entry["note"] = note
+        if current_price is not None:
+            entry["pnl_dollar"] = round(lot["quantity"] * (current_price - lot["price"]), 2)
+            entry["pnl_pct"] = (
+                round((current_price / lot["price"] - 1.0) * 100.0, 2)
+                if lot["price"]
+                else None
+            )
+        per_lot.append(entry)
+    return {
+        "lots": per_lot,
+        "avg_entry_price": round(avg_price, 4) if avg_price is not None else None,
+        "lot_count": len(lots),
+    }
+
+
+def add_to_position(
+    position_id: str,
+    *,
+    quantity: float | None = None,
+    dollars: float | None = None,
+    price: float | None = None,
+    model: Scoreable,
+    model_version: str,
+    price_provider: PriceProvider,
+    fundamental_provider: FundamentalProvider,
+    storage: Storage,
+    short_model: Scoreable | None = None,
+    earnings_provider: object | None = None,
+    note: str | None = None,
+) -> dict:
+    """Record an additional buy into an existing open position.
+
+    The buy is snapshotted at today's live price (or an explicit ``price``),
+    appended as a new lot, and the position's entry_price becomes the
+    volume-weighted average across all lots. Entry conviction stays the
+    original snapshot — it marks when the thesis was first formed.
+
+    ``dollars`` sizes the buy in currency: shares = dollars / live price.
+    Exactly one of ``quantity``/``dollars`` must be given.
+    """
+    if (quantity is not None) == (dollars is not None):
+        raise ValueError("provide exactly one of quantity or dollars")
+    if dollars is not None and dollars <= 0:
+        raise ValueError("dollars must be positive")
+    if quantity is not None and quantity <= 0:
+        raise ValueError("quantity must be positive")
+    position = storage.get_position(position_id)
+    if position is None:
+        raise KeyError(position_id)
+    if position["status"] != "open":
+        raise ValueError("cannot add to a sold position")
+    _invalidate_view_cache()
+    scored = _score_now(
+        position["ticker"],
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model,
+        earnings_provider,
+    )
+    if price is None:
+        price = float(scored["price"])
+    if dollars is not None:
+        if price <= 0:
+            raise ValueError("live price is not positive; cannot size a dollar buy")
+        quantity = dollars / price
+    updated = storage.add_lot(
+        position_id=position_id,
+        bought_at=dt.datetime.now(),
+        price=float(price),
+        quantity=float(quantity or 0.0),
+        note=note,
+    )
+    return position_view(
+        updated,
+        model,
+        model_version,
+        price_provider,
+        fundamental_provider,
+        storage,
+        short_model=short_model,
+        earnings_provider=earnings_provider,
+    )
+
+
 def position_view(
     position: dict,
     model: Scoreable,
@@ -229,6 +330,10 @@ def position_view(
     else:
         pnl_dollar = market_value - cost_basis
 
+    lots = position.get("lots") or []
+    lot_info = _lot_summary(lots, current_price if position["status"] != "sold" else None)
+    has_multiple = lot_info["lot_count"] > 1
+
     return {
         **position,
         "current_price": current_price,
@@ -244,6 +349,9 @@ def position_view(
         "signal": signal,
         "expert_view": expert,
         "quantity": quantity,
+        "avg_entry_price": lot_info["avg_entry_price"],
+        "has_multiple_lots": has_multiple,
+        "lots": lot_info["lots"],
         "cost_basis": round(cost_basis, 2),
         "market_value": round(market_value, 2),
         "pnl_dollar": round(pnl_dollar, 2),

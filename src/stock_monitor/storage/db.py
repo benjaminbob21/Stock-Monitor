@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import uuid
 from pathlib import Path
 from types import TracebackType
 
@@ -115,6 +116,17 @@ CREATE TABLE IF NOT EXISTS basket_items (
     sold_price DOUBLE
 );
 
+-- One row per buy into a basket leg (including the original allocation) so
+-- topping up a leg keeps its real cost history instead of overwriting entry_price.
+CREATE TABLE IF NOT EXISTS basket_lots (
+    id VARCHAR PRIMARY KEY,
+    item_id VARCHAR,
+    bought_at TIMESTAMP,
+    price DOUBLE,
+    shares DOUBLE,
+    note VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS positions (
     id VARCHAR PRIMARY KEY,
     ticker VARCHAR,
@@ -127,6 +139,17 @@ CREATE TABLE IF NOT EXISTS positions (
     sold_at TIMESTAMP,
     sold_price DOUBLE,
     quantity DOUBLE
+);
+
+-- One row per buy (including the original purchase) so adding to a position
+-- later keeps the real cost history instead of overwriting entry_price.
+CREATE TABLE IF NOT EXISTS position_lots (
+    id VARCHAR PRIMARY KEY,
+    position_id VARCHAR,
+    bought_at TIMESTAMP,
+    price DOUBLE,
+    quantity DOUBLE,
+    note VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -532,6 +555,71 @@ class Storage:
                 quantity,
             ],
         )
+        # The first buy is lot #1 of the position's cost history.
+        self.add_lot(
+            position_id=position_id,
+            bought_at=added_at,
+            price=entry_price,
+            quantity=quantity,
+        )
+
+    def add_lot(
+        self,
+        *,
+        position_id: str,
+        bought_at: dt.datetime,
+        price: float,
+        quantity: float,
+        note: str | None = None,
+    ) -> dict:
+        """Append a buy to a position's cost history and re-average the position.
+
+        Returns the updated position row (entry_price is now the volume-weighted
+        average across all lots; quantity is the sum).
+        """
+        lot_id = uuid.uuid4().hex[:12]
+        self._con.execute(
+            """
+            INSERT INTO position_lots (id, position_id, bought_at, price, quantity, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [lot_id, position_id, bought_at, price, quantity, note],
+        )
+        lots = self.list_lots(position_id)
+        total_qty = sum(lot["quantity"] for lot in lots)
+        avg_price = (
+            sum(lot["quantity"] * lot["price"] for lot in lots) / total_qty
+            if total_qty
+            else price
+        )
+        self._con.execute(
+            "UPDATE positions SET quantity = ?, entry_price = ? WHERE id = ?",
+            [total_qty, avg_price, position_id],
+        )
+        updated = self.get_position(position_id)
+        assert updated is not None
+        return updated
+
+    def list_lots(self, position_id: str) -> list[dict]:
+        """Return a position's buy lots, oldest first."""
+        rows = self._con.execute(
+            """
+            SELECT id, position_id, bought_at, price, quantity, note
+            FROM position_lots WHERE position_id = ? ORDER BY bought_at ASC, id ASC
+            """,
+            [position_id],
+        ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "position_id": r[1],
+                "bought_at": r[2].isoformat() if r[2] is not None else None,
+                "price": r[3],
+                "quantity": r[4],
+                "note": r[5],
+            }
+            for r in rows
+        ]
 
     def _position_row(self, row: tuple) -> dict:
         return {
@@ -568,7 +656,11 @@ class Storage:
             """,
             [position_id],
         ).fetchone()
-        return self._position_row(row) if row is not None else None
+        if row is None:
+            return None
+        position = self._position_row(row)
+        position["lots"] = self.list_lots(position_id)
+        return position
 
     def close_position(self, position_id: str, sold_at: dt.datetime, sold_price: float) -> None:
         """Mark a position sold, recording the date and price."""
@@ -578,7 +670,11 @@ class Storage:
         )
 
     def delete_position(self, position_id: str) -> bool:
-        """Permanently remove a tracked position (open or sold)."""
+        """Permanently remove a tracked position (open or sold) and its lots."""
+        self._con.execute(
+            "DELETE FROM position_lots WHERE position_id = ?",
+            [position_id],
+        )
         deleted = self._con.execute(
             "DELETE FROM positions WHERE id = ?",
             [position_id],
@@ -968,6 +1064,15 @@ class Storage:
                     item.get("entry_conviction"),
                 ],
             )
+            # The original allocation is the leg's first buy lot; the item row
+            # already carries its budget, so the seed must not grow it again.
+            self.add_basket_lot(
+                item_id=item["id"],
+                bought_at=created_at,
+                price=float(item["entry_price"]),
+                shares=float(item["shares"]),
+                grow_budget=False,
+            )
 
     def _basket_row(self, row: tuple) -> dict:
         return {
@@ -1033,7 +1138,10 @@ class Storage:
             """,
             [basket_id],
         ).fetchall()
-        return [self._basket_item_row(r) for r in rows]
+        items = [self._basket_item_row(r) for r in rows]
+        for item in items:
+            item["lots"] = self.list_basket_lots(item["id"])
+        return items
 
     def sell_basket_item(self, item_id: str, sold_at: dt.datetime, sold_price: float) -> None:
         """Mark one leg of a basket sold at a price (the other legs stay open)."""
@@ -1041,6 +1149,82 @@ class Storage:
             "UPDATE basket_items SET status = 'sold', sold_at = ?, sold_price = ? WHERE id = ?",
             [sold_at, sold_price, item_id],
         )
+
+    def add_basket_lot(
+        self,
+        *,
+        item_id: str,
+        bought_at: dt.datetime,
+        price: float,
+        shares: float,
+        note: str | None = None,
+        grow_budget: bool = True,
+    ) -> dict:
+        """Append a buy to a basket leg's cost history and re-average the leg.
+
+        Returns the updated leg row (entry_price = volume-weighted average across
+        all lots; shares = the sum). pct is left alone — it stays the original
+        allocation split, while budget grows by what the top-up actually cost.
+        ``grow_budget=False`` is used when seeding the original allocation, which
+        is already reflected in the inserted item's budget.
+        """
+        lot_id = uuid.uuid4().hex[:12]
+        self._con.execute(
+            """
+            INSERT INTO basket_lots (id, item_id, bought_at, price, shares, note)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [lot_id, item_id, bought_at, price, shares, note],
+        )
+        lots = self.list_basket_lots(item_id)
+        total_shares = sum(lot["shares"] for lot in lots)
+        avg_price = (
+            sum(lot["shares"] * lot["price"] for lot in lots) / total_shares
+            if total_shares
+            else price
+        )
+        if grow_budget:
+            self._con.execute(
+                "UPDATE basket_items SET shares = ?, entry_price = ?, budget = budget + ? "
+                "WHERE id = ?",
+                [total_shares, avg_price, shares * price, item_id],
+            )
+        else:
+            self._con.execute(
+                "UPDATE basket_items SET shares = ?, entry_price = ? WHERE id = ?",
+                [total_shares, avg_price, item_id],
+            )
+        row = self._con.execute(
+            """
+            SELECT id, basket_id, ticker, pct, budget, entry_price, shares,
+                   entry_conviction, status, sold_at, sold_price
+            FROM basket_items WHERE id = ?
+            """,
+            [item_id],
+        ).fetchone()
+        assert row is not None
+        return self._basket_item_row(row)
+
+    def list_basket_lots(self, item_id: str) -> list[dict]:
+        """Return a basket leg's buy lots, oldest first."""
+        rows = self._con.execute(
+            """
+            SELECT id, item_id, bought_at, price, shares, note
+            FROM basket_lots WHERE item_id = ? ORDER BY bought_at ASC, id ASC
+            """,
+            [item_id],
+        ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "item_id": r[1],
+                "bought_at": r[2].isoformat() if r[2] is not None else None,
+                "price": r[3],
+                "shares": r[4],
+                "note": r[5],
+            }
+            for r in rows
+        ]
 
     def close_basket(self, basket_id: str, closed_at: dt.datetime) -> None:
         """Mark a whole basket closed (all open legs go with it)."""

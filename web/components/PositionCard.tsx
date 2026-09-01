@@ -69,18 +69,50 @@ export function PositionCard({
   onSell,
   onDelete,
   onLookup,
+  onBuyMore,
 }: {
   p: PositionView;
   onSell: (id: string) => void;
   onDelete?: (id: string) => void;
   onLookup: (ticker: string) => void;
+  onBuyMore?: (id: string, params: { shares?: number; dollars?: number; note?: string }) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [buyMode, setBuyMode] = useState<"dollars" | "shares">("dollars");
+  const [buyAmount, setBuyAmount] = useState("");
+  const [buyNote, setBuyNote] = useState("");
+  const [buyError, setBuyError] = useState<string | null>(null);
   const color = SIGNAL_COLORS[p.signal] ?? "var(--gray)";
   const sold = p.status === "sold";
   const priceColor =
     (p.price_change_pct ?? 0) >= 0 ? "var(--green)" : "var(--red)";
+
+  const submitBuy = () => {
+    const raw = Number(buyAmount);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      setBuyError("Enter a positive amount");
+      return;
+    }
+    const shares =
+      buyMode === "shares"
+        ? raw
+        : undefined;
+    const dollars =
+      buyMode === "dollars"
+        ? raw
+        : undefined;
+    setBuyError(null);
+    onBuyMore?.(p.id, {
+      shares,
+      dollars,
+      note: buyNote.trim() || undefined,
+    });
+    setBuyOpen(false);
+    setBuyAmount("");
+    setBuyNote("");
+  };
 
   return (
     <div
@@ -119,16 +151,28 @@ export function PositionCard({
             {menuOpen && (
               <div className="posmenu" role="menu">
                 {!sold && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onSell(p.id);
-                    }}
-                  >
-                    Mark sold
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setBuyOpen(true);
+                      }}
+                    >
+                      Buy more…
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onSell(p.id);
+                      }}
+                    >
+                      Mark sold
+                    </button>
+                  </>
                 )}
                 {onDelete &&
                   (confirmDelete ? (
@@ -213,7 +257,18 @@ export function PositionCard({
         )}
         {(p.quantity ?? 1) !== 1 && (
           <div>
-            <span className="poslabel">position</span>
+            <span className="poslabel">
+              position
+              {p.has_multiple_lots && (
+                <span
+                  className="pos-live"
+                  title={`Blended entry across ${p.lots?.length ?? 0} buys`}
+                >
+                  {" "}
+                  · {p.lots?.length ?? 0} buys
+                </span>
+              )}
+            </span>
             <span className="posval">
               {p.quantity} sh · {money(p.market_value)}
               {p.pnl_dollar !== undefined && (
@@ -226,6 +281,29 @@ export function PositionCard({
           </div>
         )}
       </div>
+
+      {p.has_multiple_lots && !sold && (
+        <details className="poslots">
+          <summary>buy history ({p.lots?.length ?? 0})</summary>
+          <ul>
+            {(p.lots ?? []).map((lot, i) => (
+              <li key={lot.id}>
+                <strong>#{i + 1}</strong> {lot.quantity} sh @ {money(lot.price)}
+                {lot.bought_at
+                  ? ` · ${new Date(lot.bought_at).toLocaleDateString()}`
+                  : ""}
+                {lot.pnl_dollar !== undefined && lot.pnl_dollar !== null && (
+                  <em style={{ color: lot.pnl_dollar >= 0 ? "var(--green)" : "var(--red)" }}>
+                    {" "}
+                    {lot.pnl_dollar >= 0 ? "+" : "−"}${Math.abs(lot.pnl_dollar).toFixed(2)}
+                  </em>
+                )}
+                {lot.note ? <span className="poslabel"> · {lot.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {p.price_change_pct !== null && p.price_change_pct !== undefined && (
         <PLBar pct={p.price_change_pct} />
@@ -244,6 +322,83 @@ export function PositionCard({
             )}`
           : ""}
       </div>
+
+      {buyOpen && (
+        <div
+          className="buymore-pop"
+          role="dialog"
+          aria-label={`Buy more ${p.ticker}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="buymore-head">
+            <strong>Buy more {p.ticker}</strong>
+            <button
+              type="button"
+              className="posmenu-btn"
+              onClick={() => setBuyOpen(false)}
+              aria-label="close"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="buymore-modes">
+            <button
+              type="button"
+              className={buyMode === "dollars" ? "active" : ""}
+              onClick={() => setBuyMode("dollars")}
+            >
+              $
+            </button>
+            <button
+              type="button"
+              className={buyMode === "shares" ? "active" : ""}
+              onClick={() => setBuyMode("shares")}
+            >
+              shares
+            </button>
+          </div>
+          <input
+            className="buymore-input"
+            type="number"
+            min="0"
+            step="any"
+            autoFocus
+            placeholder={
+              buyMode === "dollars"
+                ? "Amount in $ (e.g. 500)"
+                : `Shares at ${money(p.current_price ?? p.entry_price)}`
+            }
+            value={buyAmount}
+            onChange={(e) => {
+              setBuyAmount(e.target.value);
+              setBuyError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitBuy();
+            }}
+          />
+          <input
+            className="buymore-input"
+            type="text"
+            placeholder="Note (optional — e.g. 'bought the dip')"
+            value={buyNote}
+            onChange={(e) => setBuyNote(e.target.value)}
+          />
+          {buyMode === "dollars" && Number(buyAmount) > 0 && (
+            <div className="poslabel">
+              ≈ {(Number(buyAmount) / (p.current_price ?? p.entry_price)).toFixed(4)} sh @{" "}
+              {money(p.current_price ?? p.entry_price)}
+            </div>
+          )}
+          {buyError && <div className="buymore-error">{buyError}</div>}
+          <button type="button" className="sellbtn" onClick={submitBuy}>
+            Record buy
+          </button>
+          <div className="poslabel">
+            Entry price becomes the average across all buys.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

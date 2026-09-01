@@ -121,6 +121,8 @@ def _basket_totals(
     total_shares_value = 0.0
     complete = True
     legs: list[dict] = []
+    # Capital actually deployed across legs (grows when legs are topped up).
+    deployed = sum(float(i["budget"]) for i in items)
     for item in items:
         exited_price = (
             item.get("sold_price") if item.get("status") == "sold" else None
@@ -139,8 +141,8 @@ def _basket_totals(
         else:
             total_shares_value += float(value)
         contribution = (
-            (float(value) - item["budget"]) / basket["total_budget"] * 100.0
-            if current is not None
+            (float(value) - item["budget"]) / deployed * 100.0
+            if current is not None and deployed
             else None
         )
         legs.append(
@@ -166,12 +168,16 @@ def basket_view(basket: dict, price_provider: PriceProvider) -> dict:
         return {**basket, "legs": [], "complete": False}
 
     value, legs, complete = _basket_totals(basket, items, price_provider)
-    pnl = value - basket["total_budget"]
-    ret = _pct_change(value, basket["total_budget"])
+    # Capital actually deployed = sum of leg budgets (original allocation plus
+    # any top-up buys, which grow their leg's budget when the lot is recorded).
+    budget = sum(leg["budget"] for leg in legs)
+    pnl = value - budget
+    ret = _pct_change(value, budget)
 
     bench_ret = _benchmark_return(basket, price_provider)
     view: dict = {
         **basket,
+        "total_budget": round(budget, 2),
         "current_value": round(value, 2),
         "pnl": round(pnl, 2),
         "return_pct": round(ret * 100.0, 2) if ret is not None else None,
@@ -228,4 +234,58 @@ def sell_leg(item_id: str, price_provider: PriceProvider, storage: Storage) -> d
         quote = price_provider.get_quote(match["ticker"]) or match["entry_price"]
         storage.sell_basket_item(item_id, dt.datetime.now(), float(quote))
         return storage.get_basket(basket["id"])
+    return None
+
+
+def buy_into_leg(
+    item_id: str,
+    price_provider: PriceProvider,
+    storage: Storage,
+    shares: float | None = None,
+    dollars: float | None = None,
+    note: str | None = None,
+) -> dict | None:
+    """Add capital to an open basket leg and return the updated basket.
+
+    Exactly one of ``shares``/``dollars`` must be given. The buy is priced at
+    the live quote (entry-price fallback), appended as a lot, and the leg's
+    entry_price becomes the volume-weighted average across its lots. The leg's
+    budget grows by the actual cost of the buy, so basket-level
+    ``pnl = value − budget`` stays honest without touching pct splits.
+    """
+    if (shares is None) == (dollars is None):
+        raise BasketError("provide exactly one of shares or dollars")
+    if shares is not None and shares <= 0:
+        raise BasketError("shares must be positive")
+    if dollars is not None and dollars <= 0:
+        raise BasketError("dollars must be positive")
+
+    for basket in storage.list_baskets():
+        items = storage.list_basket_items(basket["id"])
+        match = next((i for i in items if i["id"] == item_id), None)
+        if match is None:
+            continue
+        if match["status"] != "open":
+            raise BasketError("cannot buy into a sold leg")
+        quote = _quote_or_last_close(
+            match["ticker"], price_provider, dt.date.today()
+        ) or float(match["entry_price"])
+        buy_shares = (
+            float(shares) if shares is not None else float(dollars or 0.0) / quote
+        )
+        if buy_shares <= 0:
+            raise BasketError("computed share count is not positive")
+        storage.add_basket_lot(
+            item_id=item_id,
+            bought_at=dt.datetime.now(),
+            price=quote,
+            shares=buy_shares,
+            note=note,
+        )
+        updated = storage.get_basket(basket["id"])
+        assert updated is not None
+        # Attach legs (get_basket returns the bare row) so the returned basket
+        # can be valued directly, e.g. basket_view(updated, provider).
+        updated["items"] = storage.list_basket_items(basket["id"])
+        return updated
     return None

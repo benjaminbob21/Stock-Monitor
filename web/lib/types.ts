@@ -114,6 +114,17 @@ export interface RecommendationsResponse {
   note: string | null;
 }
 
+export interface PositionLot {
+  id: string;
+  position_id: string;
+  bought_at: string | null;
+  price: number;
+  quantity: number;
+  note?: string | null;
+  pnl_dollar?: number;
+  pnl_pct?: number | null;
+}
+
 export interface PositionView {
   id: string;
   ticker: string;
@@ -137,6 +148,9 @@ export interface PositionView {
   sentiment_score?: number | null;
   sentiment_label?: string | null;
   quantity?: number;
+  avg_entry_price?: number | null;
+  has_multiple_lots?: boolean;
+  lots?: PositionLot[];
   cost_basis?: number;
   market_value?: number;
   pnl_dollar?: number;
@@ -232,6 +246,17 @@ export interface BasketLeg {
   current_value?: number;
   pnl?: number;
   contribution_points?: number | null;
+  lot_count?: number;
+  lots?: BasketLot[];
+}
+
+export interface BasketLot {
+  id: string;
+  item_id: string;
+  bought_at: string | null;
+  price: number;
+  shares: number;
+  note?: string | null;
 }
 
 export interface BriefAllocation {

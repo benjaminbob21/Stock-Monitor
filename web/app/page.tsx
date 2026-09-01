@@ -509,6 +509,60 @@ export default function Home() {
     [loadPositions],
   );
 
+  const buyMorePosition = useCallback(
+    async (
+      id: string,
+      params: { shares?: number; dollars?: number; note?: string },
+    ) => {
+      const qs = new URLSearchParams();
+      if (params.shares !== undefined) qs.set("shares", String(params.shares));
+      if (params.dollars !== undefined) qs.set("dollars", String(params.dollars));
+      if (params.note) qs.set("note", params.note);
+      try {
+        const res = await fetch(
+          `/api/positions/${encodeURIComponent(id)}/buy?${qs.toString()}`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          const body = (await res.json()) as ApiError;
+          setPosNote(body.detail ?? "could not record that buy");
+          return;
+        }
+        await loadPositions();
+      } catch {
+        setPosNote("could not reach the scoring service");
+      }
+    },
+    [loadPositions],
+  );
+
+  const buyBasketLeg = useCallback(
+    async (
+      legId: string,
+      params: { shares?: number; dollars?: number; note?: string },
+    ) => {
+      const qs = new URLSearchParams();
+      if (params.shares !== undefined) qs.set("shares", String(params.shares));
+      if (params.dollars !== undefined) qs.set("dollars", String(params.dollars));
+      if (params.note) qs.set("note", params.note);
+      try {
+        const res = await fetch(
+          `/api/baskets/legs/${encodeURIComponent(legId)}/buy?${qs.toString()}`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          const body = (await res.json()) as ApiError;
+          setPosNote(body.detail ?? "could not record that buy");
+          return;
+        }
+        await Promise.all([loadPositions(), loadBaskets()]);
+      } catch {
+        setPosNote("could not reach the scoring service");
+      }
+    },
+    [loadPositions, loadBaskets],
+  );
+
   return (
     <div className="app-shell">
       <ServiceWorkerRegister />
@@ -665,7 +719,12 @@ export default function Home() {
             {baskets.length > 0 && (
               <div className="reclist">
                 {baskets.map((b) => (
-                  <BasketCard key={b.id} basket={b} onClose={closeBasket} />
+                  <BasketCard
+                    key={b.id}
+                    basket={b}
+                    onClose={closeBasket}
+                    onBuyLeg={buyBasketLeg}
+                  />
                 ))}
               </div>
             )}
@@ -688,6 +747,7 @@ export default function Home() {
                     onSell={sellPosition}
                     onDelete={deletePosition}
                     onLookup={lookup}
+                    onBuyMore={buyMorePosition}
                   />
                 ))}
             </div>

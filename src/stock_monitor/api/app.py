@@ -31,6 +31,7 @@ from stock_monitor.metrics import SCORE_LATENCY, SCORES_SERVED
 from stock_monitor.models.registry import compute_model_version, load_model
 from stock_monitor.models.scorer import Scoreable
 from stock_monitor.positions import (
+    add_to_position,
     list_position_views,
     open_position,
     sell_position,
@@ -1096,6 +1097,52 @@ def add_position(ticker: str, state: StateDep, quantity: float = 1.0) -> dict[st
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/positions/{position_id}/buy")
+def buy_more_position(
+    position_id: str,
+    state: StateDep,
+    shares: float | None = None,
+    dollars: float | None = None,
+    note: str | None = None,
+) -> dict[str, object]:
+    """Record an additional buy into an existing open position.
+
+    Priced at the live quote when ``dollars`` is given (shares = dollars/price);
+    entry_price becomes the volume-weighted average across all buys.
+    """
+    _require_ready(state)
+    if (shares is None) == (dollars is None):
+        raise HTTPException(
+            status_code=422, detail="provide exactly one of shares or dollars"
+        )
+    if shares is not None and shares <= 0:
+        raise HTTPException(status_code=422, detail="shares must be positive")
+    if dollars is not None and dollars <= 0:
+        raise HTTPException(status_code=422, detail="dollars must be positive")
+    with Storage(state.db_path) as store:  # type: ignore[arg-type]
+        if store.get_position(position_id) is None:
+            raise HTTPException(status_code=404, detail="position not found")
+        try:
+            updated = add_to_position(
+                position_id,
+                quantity=shares,
+                dollars=dollars,
+                model=state.model,  # type: ignore[arg-type]
+                model_version=state.model_version or "unknown",
+                price_provider=state.price_provider,  # type: ignore[arg-type]
+                fundamental_provider=state.fundamental_provider,  # type: ignore[arg-type]
+                storage=store,
+                short_model=state.model_short,
+                earnings_provider=state.earnings_provider,
+                note=note,
+            )
+        except TickerDataUnavailable as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return updated
+
+
 @app.post("/positions/{position_id}/sell")
 def sell(position_id: str, state: StateDep) -> dict[str, object]:
     """Mark a tracked position sold at today's price."""
@@ -1314,6 +1361,43 @@ def create_basket_endpoint(request: Request, state: StateDep) -> dict[str, objec
             )
     except BasketError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/baskets/legs/{item_id}/buy")
+def buy_into_leg_endpoint(
+    item_id: str,
+    state: StateDep,
+    shares: float | None = None,
+    dollars: float | None = None,
+    note: str | None = None,
+) -> dict[str, object]:
+    """Add capital to one open leg of a joint portfolio.
+
+    Priced at the live quote; the leg's entry_price becomes the volume-weighted
+    average across its buys and its budget grows by the actual cost.
+    """
+    from stock_monitor.baskets import BasketError, buy_into_leg
+
+    _require_ready(state)
+    if (shares is None) == (dollars is None):
+        raise HTTPException(
+            status_code=422, detail="provide exactly one of shares or dollars"
+        )
+    try:
+        with Storage(state.db_path) as store:  # type: ignore[arg-type]
+            updated = buy_into_leg(
+                item_id,
+                state.price_provider,  # type: ignore[arg-type]
+                store,
+                shares=shares,
+                dollars=dollars,
+                note=note,
+            )
+    except BasketError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="basket leg not found")
+    return updated
 
 
 @app.post("/baskets/{basket_id}/close")

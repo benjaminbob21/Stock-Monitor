@@ -35,13 +35,34 @@ function PLBar({ pct }: { pct: number }) {
 export function BasketCard({
   basket,
   onClose,
+  onBuyLeg,
 }: {
   basket: BasketView;
   onClose: (id: string) => void;
+  onBuyLeg?: (legId: string, params: { shares?: number; dollars?: number; note?: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [buyLegId, setBuyLegId] = useState<string | null>(null);
+  const [buyMode, setBuyMode] = useState<"dollars" | "shares">("dollars");
+  const [buyAmount, setBuyAmount] = useState("");
+  const [buyError, setBuyError] = useState<string | null>(null);
   const ret = basket.return_pct;
   const bench = basket.benchmark_return_pct;
+
+  const submitLegBuy = (leg: BasketLeg) => {
+    const raw = Number(buyAmount);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      setBuyError("Enter a positive amount");
+      return;
+    }
+    setBuyError(null);
+    onBuyLeg?.(leg.id, {
+      shares: buyMode === "shares" ? raw : undefined,
+      dollars: buyMode === "dollars" ? raw : undefined,
+    });
+    setBuyLegId(null);
+    setBuyAmount("");
+  };
 
   return (
     <div
@@ -107,7 +128,18 @@ export function BasketCard({
           <tbody>
             {basket.legs.map((leg: BasketLeg) => (
               <tr key={leg.id} style={{ opacity: leg.status === "sold" ? 0.55 : 1 }}>
-                <td className="legticker">{leg.ticker}</td>
+                <td className="legticker">
+                  {leg.ticker}
+                  {(leg.lot_count ?? 0) > 1 && (
+                    <span
+                      className="poslabel"
+                      title={`Blended entry across ${leg.lot_count} buys`}
+                    >
+                      {" "}
+                      ·{leg.lot_count} buys
+                    </span>
+                  )}
+                </td>
                 <td>{leg.pct}%</td>
                 <td>
                   ${leg.entry_price.toFixed(2)} →{" "}
@@ -123,11 +155,101 @@ export function BasketCard({
                   </strong>{" "}
                   pts
                 </td>
-                {basket.status === "open" && <td />}
+                {basket.status === "open" && (
+                  <td>
+                    {leg.status === "open" && onBuyLeg && (
+                      <button
+                        type="button"
+                        className="sellbtn legbuybtn"
+                        onClick={() => {
+                          setBuyLegId(buyLegId === leg.id ? null : leg.id);
+                          setBuyAmount("");
+                          setBuyError(null);
+                        }}
+                        aria-label={`Buy more ${leg.ticker}`}
+                      >
+                        + Buy
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {buyLegId && basket.status === "open" && (
+        <div className="buymore-pop" role="dialog" aria-label="Buy more of a leg">
+          <div className="buymore-head">
+            <strong>
+              Buy more{" "}
+              {basket.legs.find((l) => l.id === buyLegId)?.ticker ?? ""}
+            </strong>
+            <button
+              type="button"
+              className="posmenu-btn"
+              onClick={() => setBuyLegId(null)}
+              aria-label="close"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="buymore-modes">
+            <button
+              type="button"
+              className={buyMode === "dollars" ? "active" : ""}
+              onClick={() => setBuyMode("dollars")}
+            >
+              $
+            </button>
+            <button
+              type="button"
+              className={buyMode === "shares" ? "active" : ""}
+              onClick={() => setBuyMode("shares")}
+            >
+              shares
+            </button>
+          </div>
+          <input
+            className="buymore-input"
+            type="number"
+            min="0"
+            step="any"
+            autoFocus
+            placeholder={
+              buyMode === "dollars"
+                ? "Amount in $ (e.g. 500)"
+                : "Number of shares"
+            }
+            value={buyAmount}
+            onChange={(e) => {
+              setBuyAmount(e.target.value);
+              setBuyError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const leg = basket.legs.find((l) => l.id === buyLegId);
+                if (leg) submitLegBuy(leg);
+              }
+            }}
+          />
+          {buyError && <div className="buymore-error">{buyError}</div>}
+          <button
+            type="button"
+            className="sellbtn"
+            onClick={() => {
+              const leg = basket.legs.find((l) => l.id === buyLegId);
+              if (leg) submitLegBuy(leg);
+            }}
+          >
+            Record buy
+          </button>
+          <div className="poslabel">
+            Leg entry becomes the average across all buys; portfolio capital grows by
+            the cost.
+          </div>
+        </div>
       )}
 
       <div className="posmeta">

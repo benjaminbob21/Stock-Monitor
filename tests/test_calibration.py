@@ -33,7 +33,19 @@ def test_train_calibrated_model_produces_calibrated_scores(world: SimpleNamespac
     result = score_row(model, row)
     assert result.calibrated is True
     assert 0 <= result.conviction <= 100
-    assert 1 <= len(result.drivers) <= 3
+    assert len(result.drivers) == 11
+    assert result.pillar_scores is not None
+    assert "Momentum" in result.pillar_scores
+    assert "Quality" in result.pillar_scores
+
+
+def test_rank_calibrator_preserves_ordering() -> None:
+    from stock_monitor.models.calibration import RankCalibrator
+
+    quantiles = np.linspace(0.1, 0.9, 100)
+    rc = RankCalibrator(quantiles=quantiles)
+    out = rc.transform([0.1, 0.5, 0.9])
+    assert 0.0 <= out[0] < out[1] < out[2] <= 1.0
 
 
 def test_plain_model_scores_uncalibrated(world: SimpleNamespace) -> None:
@@ -42,3 +54,4 @@ def test_plain_model_scores_uncalibrated(world: SimpleNamespace) -> None:
     assert row is not None
     result = score_row(world.model, row)  # plain LGBMClassifier
     assert result.calibrated is False
+    assert len(result.drivers) == 11

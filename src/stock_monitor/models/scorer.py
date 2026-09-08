@@ -22,7 +22,13 @@ import pandas as pd
 import shap
 
 from stock_monitor.features.builder import FEATURE_COLUMNS
-from stock_monitor.models.calibration import CalibratedModel, Calibrator, fit_calibrator
+from stock_monitor.models.calibration import (
+    CalibratedModel,
+    Calibrator,
+    RankCalibrator,
+    fit_calibrator,
+)
+from stock_monitor.models.pillars import compute_pillar_scores
 
 # Forward-return label window. Locked to 12 months for a cleaner long-term signal
 # (build-plan open item #4). Overridable via config for experiments.
@@ -41,11 +47,11 @@ _DEFAULT_LGBM_PARAMS: dict = {
     "verbose": -1,
 }
 
-# Heavily-regularized overrides for the SHORT-horizon (3-month) model. Short-term
-# relative-vs-benchmark returns are close to noise, so the full-capacity model
-# saturates (raw proba ≈ 1.0 for everything) and calibration then collapses every
-# score to the base rate (~70% flat). Shrinking capacity (shallow trees, more
-# samples-per-leaf, fewer estimators) plus L1/L2 stops the memorization so the
+# Hyperparameters for the (noisy, short-horizon) 3-month secondary model.
+# A 3-month forward return has much lower SNR than 12 months; the default-capacity
+# tree easily overfits and produces collapsed/saturated probabilities. Capping depth
+# and leaves + demanding larger leaves (min_child_samples=30 vs 5, so each leaf
+# requires ~30 distinct cross-sectional bars) plus L1/L2 stops the memorization so the
 # short-horizon conviction spreads out and carries real information again.
 SHORT_HORIZON_LGBM_PARAMS: dict = {
     "n_estimators": 120,
@@ -86,9 +92,15 @@ class ScoreResult:
     fundamentals_known_on: object | None  # datetime.date | None
     recommendation: str
     calibrated: bool = False
+    calibration_mode: str = "none"  # "sigmoid" | "isotonic" | "rank" | "none"
+    pillar_scores: dict | None = None
 
 
-def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClassifier:
+def train_model(
+    frame: pd.DataFrame,
+    params: dict | None = None,
+    feature_columns: tuple[str, ...] | None = None,
+) -> lgb.LGBMClassifier:
     """Train a small LightGBM classifier on a labelled feature frame.
 
     ``params`` overrides individual LightGBM hyperparameters on top of the defaults —
@@ -101,7 +113,12 @@ def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClas
             "Widen the watchlist or history window."
         )
 
-    x = frame[list(FEATURE_COLUMNS)]
+    columns = (
+        list(feature_columns)
+        if feature_columns is not None
+        else list(FEATURE_COLUMNS)
+    )
+    x = frame[columns]
     y = frame["label"].astype(int)
 
     model = lgb.LGBMClassifier(**{**_DEFAULT_LGBM_PARAMS, **(params or {})})
@@ -111,9 +128,10 @@ def train_model(frame: pd.DataFrame, params: dict | None = None) -> lgb.LGBMClas
 
 def train_calibrated_model(
     frame: pd.DataFrame,
-    method: str = "sigmoid",
-    cv: int = 3,
+    method: str = "isotonic",
+    cv: int = 5,
     params: dict | None = None,
+    feature_columns: tuple[str, ...] | None = None,
 ) -> CalibratedModel:
     """Train the base model and fit a probability calibrator on out-of-fold preds.
 
@@ -125,11 +143,16 @@ def train_calibrated_model(
     ``params`` is forwarded to the base model so callers can regularize a specific
     horizon (the out-of-fold model inherits the same params via ``get_params``).
     """
-    base = train_model(frame, params=params)
-    x = frame[list(FEATURE_COLUMNS)]
+    columns = (
+        list(feature_columns)
+        if feature_columns is not None
+        else list(FEATURE_COLUMNS)
+    )
+    base = train_model(frame, params=params, feature_columns=feature_columns)
+    x = frame[columns]
     y = frame["label"].astype(int)
 
-    calibrator: Calibrator | None = None
+    calibrator: Calibrator | RankCalibrator | None = None
     class_counts = y.value_counts()
     if len(y) >= 2 * cv and class_counts.min() >= cv:
         try:
@@ -160,13 +183,33 @@ def train_calibrated_model(
         except (ValueError, IndexError):
             calibrator = None
 
-    return CalibratedModel(base=base, calibrator=calibrator)
+    # Check dynamic range: if probability calibration collapsed to base rate,
+    # fall back to RankCalibrator to preserve cross-sectional ranking info.
+    if calibrator is not None:
+        test_model = CalibratedModel(base=base, calibrator=calibrator)
+        if is_low_signal(test_model, min_range=8.0):
+            valid_mask = ~np.isnan(oof)
+            if valid_mask.sum() > 0:
+                calibrator = RankCalibrator(quantiles=np.sort(oof[valid_mask]))
+
+    return CalibratedModel(
+        base=base,
+        calibrator=calibrator,
+        feature_columns=tuple(columns),
+    )
 
 
-def _unwrap(model: Scoreable) -> tuple[lgb.LGBMClassifier, Calibrator | None]:
+def _unwrap(model: Scoreable) -> tuple[lgb.LGBMClassifier, Calibrator | RankCalibrator | None]:
     if isinstance(model, CalibratedModel):
         return model.base, model.calibrator
     return model, None
+
+
+def _model_features(model: Scoreable) -> tuple[str, ...]:
+    """Return the feature columns a model was trained on."""
+    if isinstance(model, CalibratedModel) and model.feature_columns:
+        return model.feature_columns
+    return FEATURE_COLUMNS
 
 
 def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
@@ -176,7 +219,8 @@ def predict_conviction(model: Scoreable, row: dict[str, object]) -> int:
     we only need the number, not a full explanation.
     """
     base, calibrator = _unwrap(model)
-    x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
+    columns = list(_model_features(model))
+    x = pd.DataFrame([{f: row.get(f) for f in columns}], columns=columns)
     raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
     return int(round(proba * 100))
@@ -223,13 +267,14 @@ def _positive_class_shap(explainer: shap.TreeExplainer, x: pd.DataFrame) -> np.n
 
 
 def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
-    """Score one PIT feature row and explain it with the top-3 SHAP drivers.
+    """Score one PIT feature row and explain it with SHAP drivers and pillar breakdown.
 
     If ``model`` is a CalibratedModel, the conviction is the *calibrated* probability
-    while SHAP still explains the underlying tree model.
+    (or rank percentile) while SHAP still explains the underlying tree model.
     """
     base, calibrator = _unwrap(model)
-    x = pd.DataFrame([{f: row.get(f) for f in FEATURE_COLUMNS}], columns=list(FEATURE_COLUMNS))
+    columns = list(_model_features(model))
+    x = pd.DataFrame([{f: row.get(f) for f in columns}], columns=columns)
 
     raw = float(np.asarray(base.predict_proba(x))[0, 1])
     proba = float(calibrator.transform([raw])[0]) if calibrator is not None else raw
@@ -241,19 +286,33 @@ def score_row(model: Scoreable, row: dict[str, object]) -> ScoreResult:
     ranked = sorted(
         (
             Driver(feature=f, value=_as_float(row.get(f)), shap=float(s))
-            for f, s in zip(FEATURE_COLUMNS, shap_vec, strict=True)
+            for f, s in zip(columns, shap_vec, strict=True)
         ),
         key=lambda d: abs(d.shap),
         reverse=True,
     )
 
+    if calibrator is None:
+        cal_mode = "none"
+    elif isinstance(calibrator, RankCalibrator):
+        cal_mode = "rank"
+    else:
+        cal_mode = getattr(calibrator, "method", "calibrated")
+
+    shap_ranges = (
+        model.shap_ranges if isinstance(model, CalibratedModel) else None
+    )
+    pillars = compute_pillar_scores(ranked, shap_ranges)
+
     return ScoreResult(
         ticker=str(row.get("ticker", "?")),
         conviction=conviction,
-        drivers=ranked[:3],
+        drivers=ranked,
         fundamentals_known_on=row.get("fundamentals_known_on"),
         recommendation=recommendation_band(conviction),
         calibrated=calibrator is not None,
+        calibration_mode=cal_mode,
+        pillar_scores=pillars,
     )
 
 

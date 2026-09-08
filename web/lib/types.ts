@@ -1,8 +1,15 @@
+export interface PillarScore {
+  score: number; // 0-100
+  shap_sum: number;
+  features: Driver[];
+}
+
 export interface Driver {
   feature: string;
   value: number;
   shap: number;
   direction: string;
+  pillar?: string;
 }
 
 export interface ScoreResponse {
@@ -10,6 +17,7 @@ export interface ScoreResponse {
   name?: string | null;
   as_of: string;
   conviction: number;
+  raw_conviction?: number;
   recommendation: string;
   calibrated: boolean;
   model_version: string;
@@ -24,7 +32,34 @@ export interface ScoreResponse {
   recommendation_3m?: string | null;
   near_term_note?: string | null;
   days_to_earnings?: number | null;
+  pillar_scores?: Record<string, PillarScore>;
+  calibration_mode?: string;
+  cap_applied?: boolean;
+  cap_reason?: string | null;
 }
+
+export interface ScoreHistoryPoint {
+  date: string;
+  conviction: number;
+}
+
+export interface SimilarResponse {
+  ticker: string;
+  as_of?: string;
+  similar?: {
+    k: number;
+    base_rate: number;
+    overall_base_rate: number;
+    analogs: Array<{
+      ticker: string;
+      as_of: string;
+      distance: number;
+      beat_benchmark: boolean;
+    }>;
+  } | null;
+  note?: string | null;
+}
+
 
 export interface AnalystOpinion {
   opinion: "BUY" | "HOLD" | "SELL";

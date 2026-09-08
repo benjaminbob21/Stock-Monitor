@@ -3466,3 +3466,236 @@ body.sheet-open {
   font-weight: 600;
   margin-bottom: 12px;
 }
+
+/* ---- 5-Pillar Score Breakdown & Radar -------------------------------------- */
+.pillar-radar {
+  display: block;
+  margin: 0 auto;
+  flex-shrink: 0;
+}
+
+.pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pillar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--panel-solid) 60%, transparent);
+  overflow: hidden;
+}
+
+.pillar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.pillar-header:hover {
+  background: color-mix(in srgb, var(--panel-solid) 90%, var(--accent));
+}
+
+.pillar-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  width: 12px;
+}
+
+.pillar-name {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 0 0 85px;
+}
+
+.pillar-score {
+  font-weight: 700;
+  font-size: 13px;
+  font-family: var(--font-jbmono), monospace;
+  width: 28px;
+  text-align: right;
+}
+
+.pillar-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.pillar-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.pillar-details {
+  padding: 4px 10px 8px 30px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: color-mix(in srgb, var(--panel) 40%, transparent);
+}
+
+.pillar-feat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+
+.pillar-dir {
+  font-size: 10px;
+  width: 12px;
+}
+
+.pillar-dir.pos {
+  color: var(--green);
+}
+
+.pillar-dir.neg {
+  color: var(--red);
+}
+
+.pillar-feat-name {
+  flex: 1;
+  color: var(--text);
+}
+
+.pillar-feat-val {
+  color: var(--muted);
+  font-family: var(--font-jbmono), monospace;
+  font-size: 12px;
+  min-width: 60px;
+  text-align: right;
+}
+
+.pillar-feat-shap {
+  min-width: 50px;
+  text-align: right;
+  font-family: var(--font-jbmono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pillar-feat-shap.pos {
+  color: var(--green);
+}
+
+.pillar-feat-shap.neg {
+  color: var(--red);
+}
+
+/* ---- Score Waterfall -------------------------------------------------------- */
+.waterfall {
+  font-size: 13px;
+}
+
+.wf-header,
+.wf-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-weight: 600;
+}
+
+.wf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.wf-label {
+  width: 80px;
+}
+
+.wf-bar-track {
+  flex: 1;
+  height: 8px;
+  position: relative;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.wf-zero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--muted);
+}
+
+.wf-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.wf-bar-fill.pos {
+  background: var(--green);
+  margin-left: 50%;
+}
+
+.wf-bar-fill.neg {
+  background: var(--red);
+  margin-right: 50%;
+  margin-left: auto;
+}
+
+.wf-delta {
+  width: 45px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.wf-delta.pos {
+  color: var(--green);
+}
+
+.wf-delta.neg {
+  color: var(--red);
+}
+
+.wf-num {
+  font-weight: 700;
+  font-family: var(--font-jbmono), monospace;
+}
+
+/* ---- Cap callout & Analogs line -------------------------------------------- */
+.cap-callout {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
+  color: var(--orange);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  margin: 10px 0 6px;
+}
+
+.analogs-line {
+  font-size: 13px;
+  color: var(--text);
+  padding: 6px 0;
+  margin-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+/* ---- Sparkline ------------------------------------------------------------- */
+.sparkline {
+  display: inline-block;
+  vertical-align: middle;
+}

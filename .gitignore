@@ -73,3 +73,6 @@ bluebird_stock_photos/
 
 # ---- Oracle Cloud grabber config (local OCIDs, never commit) ----
 scripts/.oci-grab.env
+
+# ---- Private local deployment notes (never commit) ----
+.local/

@@ -47,6 +47,9 @@ _LOOKBACK_1M = 21
 _LOOKBACK_6M = 126
 _LOOKBACK_12M = 252
 _VOL_WINDOW = 63
+# "excess" label mode: a row is positive only when the ticker's forward return
+# beats the benchmark by more than this margin (5% over the label window).
+_EXCESS_THRESHOLD = 0.05
 _RSI_WINDOW = 14
 _SMA_WINDOW = 200
 
@@ -372,12 +375,14 @@ def build_training_frame(
     label_window_months: int,
     step_months: int = 1,
     sentiment_lookup: Callable[[dt.date], float] | None = None,
+    label_mode: str = "relative",
 ) -> pd.DataFrame:
     """Build a labelled frame by walking monthly as-of dates through history.
 
     Label = 1 if the ticker's forward ``label_window_months`` return beats the
-    benchmark's over the same window, else 0. Both features and label are computed
-    PIT-correctly: no row can see data past its own ``as_of``.
+    benchmark's over the same window (or beats by >5% when ``label_mode="excess"``),
+    else 0. Both features and label are computed PIT-correctly: no row can see
+    data past its own ``as_of``.
 
     Pass ``sentiment_lookup`` to bake the backfilled PIT news sentiment into each row's
     ``sentiment`` feature; omit it to keep the neutral 0.0 placeholder.
@@ -406,7 +411,12 @@ def build_training_frame(
 
         fwd_ret = p_future / p_now - 1.0
         bench_ret = b_future / b_now - 1.0
-        row["label"] = int(fwd_ret > bench_ret)
+        if label_mode == "excess":
+            # Label 1 only when the ticker beats the benchmark by a real margin —
+            # filters out coin-flip "beat by 0.1%" rows that dilute the signal.
+            row["label"] = int(fwd_ret > bench_ret + _EXCESS_THRESHOLD)
+        else:
+            row["label"] = int(fwd_ret > bench_ret)
         rows.append(row)
 
     frame = pd.DataFrame(rows)

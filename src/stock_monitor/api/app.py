@@ -295,6 +295,26 @@ def score(ticker: str, state: StateDep) -> dict[str, object]:
         SCORE_LATENCY.observe(time.perf_counter() - start)
 
 
+@app.get("/scores/history/{ticker}")
+def scores_history(ticker: str, state: StateDep, days: int = 30) -> dict[str, object]:
+    """Recent conviction history for sparkline display."""
+    upper = ticker.upper()
+    if not state.db_path:
+        return {"ticker": upper, "history": []}
+    with Storage(state.db_path) as store:
+        rows = store.conn.execute(
+            "SELECT CAST(scored_at AS DATE) as score_date, conviction "
+            "FROM scores "
+            "WHERE ticker = ? AND scored_at >= current_date - cast(? as integer) * interval '1 day' "
+            "ORDER BY scored_at ASC",
+            [upper, days],
+        ).fetchall()
+    return {
+        "ticker": upper,
+        "history": [{"date": str(r[0]), "conviction": int(r[1])} for r in rows],
+    }
+
+
 @app.get("/search")
 def search_symbols(state: StateDep, q: str = "", limit: int = 15) -> dict[str, object]:
     """Search the SEC ticker registry by company name or symbol (for the search box).

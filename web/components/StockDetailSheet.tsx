@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AnalystCard } from "@/components/AnalystCard";
 import { ConvictionCard } from "@/components/ConvictionCard";
@@ -12,7 +12,9 @@ import type {
   AnalystResponse,
   ExplainResponse,
   NewsResponse,
+  ScoreHistoryPoint,
   ScoreResponse,
+  SimilarResponse,
 } from "@/lib/types";
 
 export function StockDetailSheet({
@@ -45,6 +47,34 @@ export function StockDetailSheet({
   const [qtyOpen, setQtyOpen] = useState(false);
   const [qtyMode, setQtyMode] = useState<"shares" | "dollars">("shares");
   const [qtyValue, setQtyValue] = useState("");
+  const [similar, setSimilar] = useState<SimilarResponse | null>(null);
+  const [history, setHistory] = useState<ScoreHistoryPoint[]>([]);
+
+  useEffect(() => {
+    if (!ticker) {
+      setSimilar(null);
+      setHistory([]);
+      return;
+    }
+    let active = true;
+    fetch(`/api/similar/${encodeURIComponent(ticker)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (active && json) setSimilar(json);
+      })
+      .catch(() => {});
+
+    fetch(`/api/scores/history/${encodeURIComponent(ticker)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (active && json?.history) setHistory(json.history);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [ticker]);
 
   const price = data?.price ?? null;
   const parsedQty = Number(qtyValue);
@@ -198,7 +228,9 @@ export function StockDetailSheet({
       <div className="sheet-body">
         {loading && <div className="status">Scoring {ticker}…</div>}
         {error && <div className="status error">{error}</div>}
-        {data && <ConvictionCard data={data} />}
+        {data && (
+          <ConvictionCard data={data} history={history} similar={similar} />
+        )}
         {data && (
           <PlainSummaryCard
             summary={explain?.summary ?? null}

@@ -1,5 +1,8 @@
-import type { ScoreResponse } from "@/lib/types";
+import type { ScoreResponse, ScoreHistoryPoint, SimilarResponse } from "@/lib/types";
 import { ConvictionRing } from "@/components/ConvictionRing";
+import { ConvictionSparkline } from "@/components/ConvictionSparkline";
+import { PillarRadar } from "@/components/PillarRadar";
+import { PillarAccordion } from "@/components/PillarAccordion";
 import { DriverBars } from "@/components/DriverBars";
 import { DriverExplainer } from "@/components/DriverExplainer";
 
@@ -15,8 +18,18 @@ function recColor(recommendation: string): string {
   return REC_COLORS[recommendation] ?? "var(--gray)";
 }
 
-export function ConvictionCard({ data }: { data: ScoreResponse }) {
+export function ConvictionCard({
+  data,
+  history,
+  similar,
+}: {
+  data: ScoreResponse;
+  history?: ScoreHistoryPoint[];
+  similar?: SimilarResponse | null;
+}) {
   const color = recColor(data.recommendation);
+  const hasPillars =
+    data.pillar_scores && Object.keys(data.pillar_scores).length > 0;
 
   return (
     <div className="card">
@@ -36,12 +49,25 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
             {data.recommendation}
           </span>
         </div>
-        <ConvictionRing
-          value={data.conviction}
-          color={color}
-          caption={data.recommendation}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {history && history.length >= 2 && (
+            <ConvictionSparkline history={history} />
+          )}
+          <ConvictionRing
+            value={data.conviction}
+            color={color}
+            caption={data.recommendation}
+          />
+        </div>
       </div>
+
+      {data.cap_applied && data.raw_conviction !== undefined && (
+        <p className="cap-callout">
+          ⚠️ Model scored <b>{data.raw_conviction}</b> → capped to{" "}
+          <b>{data.conviction}</b>
+          {data.cap_reason ? ` (${data.cap_reason.replace(/_/g, " ")})` : ""}
+        </p>
+      )}
 
       {data.conviction_3m !== null && data.conviction_3m !== undefined && (
         <div className="hzbars">
@@ -102,9 +128,39 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           </p>
         )}
 
-      <p className="section-label">Top drivers (SHAP)</p>
-      <DriverBars drivers={data.drivers} />
-      <DriverExplainer drivers={data.drivers} />
+      {hasPillars ? (
+        <>
+          <p className="section-label">5-Pillar Score Breakdown</p>
+          <div
+            style={{
+              display: "flex",
+              gap: 16,
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <PillarRadar pillars={data.pillar_scores!} />
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <PillarAccordion pillars={data.pillar_scores!} />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="section-label">Top drivers (SHAP)</p>
+          <DriverBars drivers={data.drivers} />
+          <DriverExplainer drivers={data.drivers} />
+        </>
+      )}
+
+      {similar?.similar && (
+        <p className="analogs-line">
+          📊 <b>{Math.round(similar.similar.base_rate * similar.similar.k)}/{similar.similar.k}</b> similar
+          past setups beat SPY ({(similar.similar.base_rate * 100).toFixed(0)}% historical hit rate)
+        </p>
+      )}
 
       <p className="section-label">Risk flags</p>
       <div className="flags">
@@ -125,8 +181,12 @@ export function ConvictionCard({ data }: { data: ScoreResponse }) {
           {data.fundamentals_known_on ?? "n/a (no PIT fundamentals)"}
         </span>
         <span>
-          {data.calibrated ? "calibrated" : "uncalibrated"} ·{" "}
-          {data.model_version}
+          {data.calibration_mode === "rank"
+            ? "rank-based"
+            : data.calibrated
+              ? "calibrated"
+              : "uncalibrated"}{" "}
+          · {data.model_version}
         </span>
       </div>
 

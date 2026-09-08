@@ -14,6 +14,7 @@ import pandas as pd
 from stock_monitor.backfill import make_sentiment_lookup
 from stock_monitor.features.builder import build_feature_row
 from stock_monitor.features.schema import validate_features
+from stock_monitor.models.pillars import FEATURE_TO_PILLAR
 from stock_monitor.models.scorer import (
     Scoreable,
     is_low_signal,
@@ -36,6 +37,10 @@ _UNCALIBRATED_NOTE = (
 _CALIBRATED_NOTE = (
     " Conviction is calibrated on out-of-fold history — treat it as an estimated "
     "probability, still not a certainty."
+)
+_RANK_NOTE = (
+    " Conviction is rank-based (a universe-relative percentile) rather than a "
+    "calibrated probability — useful for ranking, not for interpreting as a hit rate."
 )
 
 # Risk-flag thresholds (Phase 1, deliberately simple).
@@ -230,7 +235,13 @@ def score_ticker(
     flags = risk_flags(row) + caps
     recommendation = recommendation_band(capped)
     drivers = [
-        {"feature": d.feature, "value": d.value, "shap": d.shap, "direction": d.direction}
+        {
+            "feature": d.feature,
+            "value": d.value,
+            "shap": d.shap,
+            "direction": d.direction,
+            "pillar": FEATURE_TO_PILLAR.get(d.feature, "Other"),
+        }
         for d in result.drivers
     ]
     known_on = row.get("fundamentals_known_on")
@@ -268,6 +279,16 @@ def score_ticker(
             risk_flags=flags,
         )
 
+    disclaimer_note = (
+        _RANK_NOTE
+        if result.calibration_mode == "rank"
+        else (
+            _CALIBRATED_NOTE
+            if result.calibrated
+            else _UNCALIBRATED_NOTE
+        )
+    )
+
     return {
         "ticker": ticker,
         "as_of": as_of.isoformat(),
@@ -278,17 +299,20 @@ def score_ticker(
         "last_close": price,
         "recommendation": recommendation,
         "calibrated": result.calibrated,
+        "calibration_mode": result.calibration_mode,
+        "cap_applied": capped < result.conviction,
+        "cap_reason": caps[0] if caps else None,
         "model_version": model_version,
         "fundamentals_known_on": known_on_date.isoformat() if known_on_date else None,
         "drivers": drivers,
+        "pillar_scores": result.pillar_scores,
         "risk_flags": flags,
         "days_to_earnings": days_to_earnings,
         # Near-term (3-month) read alongside the 12-month conviction, when available.
         "conviction_3m": conviction_3m,
         "recommendation_3m": recommendation_3m,
         "near_term_note": near_term_note,
-        "disclaimer": _GUARDRAIL
-        + (_CALIBRATED_NOTE if result.calibrated else _UNCALIBRATED_NOTE),
+        "disclaimer": _GUARDRAIL + disclaimer_note,
     }
 
 

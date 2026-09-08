@@ -1,6 +1,27 @@
 import type { Driver } from "@/lib/types";
 import { prettyFeature } from "@/lib/ui";
 
+const FORMAT: Record<string, (v: number) => string> = {
+  mom_12_1: (v) => `${(v * 100).toFixed(1)}%`,
+  mom_6_1: (v) => `${(v * 100).toFixed(1)}%`,
+  vol_3m: (v) => `${(v * 100).toFixed(1)}%`,
+  rsi_14: (v) => v.toFixed(0),
+  trend_200: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`,
+  roe: (v) => `${(v * 100).toFixed(1)}%`,
+  debt_ratio: (v) => `${(v * 100).toFixed(1)}%`,
+  profit_margin: (v) => `${(v * 100).toFixed(1)}%`,
+  earnings_yield: (v) => `${(v * 100).toFixed(2)}%`,
+  fcf_yield: (v) => `${(v * 100).toFixed(2)}%`,
+  sentiment: (v) => v.toFixed(2),
+};
+
+function formatValue(feature: string, value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  const fmt = FORMAT[feature];
+  return fmt ? fmt(value) : value.toFixed(3);
+}
+
+
 // SHAP contribution chart — a diverging bar per factor. Bars grow right (green,
 // pushing conviction up) or left (red, pulling it down) from a centre axis,
 // scaled to the strongest driver so relative weight is obvious. The arrow +
@@ -30,7 +51,7 @@ export function DriverBars({ drivers }: { drivers: Driver[] }) {
               </span>
               <span className="dbar-feat">{prettyFeature(d.feature)}</span>
               <span className="dbar-val">
-                {Number.isFinite(d.value) ? d.value.toFixed(3) : "n/a"}
+                {formatValue(d.feature, d.value)}
               </span>
               <span className={`dbar-shap ${pos ? "pos" : "neg"}`}>
                 {d.shap >= 0 ? "+" : ""}

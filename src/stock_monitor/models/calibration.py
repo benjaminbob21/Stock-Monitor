@@ -37,12 +37,52 @@ class Calibrator:
         return np.clip(out, 0.0, 1.0)
 
 
+@dataclass(frozen=True)
+class RankCalibrator:
+    """Universe-rank fallback when probability calibration collapses.
+
+    When the sigmoid/isotonic calibrator flattens (all OOF predictions map to
+    the base rate), the model still has useful *ordering* information — it just
+    can't make calibrated probability claims. This fallback converts a raw
+    tree probability into a universe-relative percentile, preserving cross-
+    sectional ranking while being honest that it's a rank, not a probability.
+    """
+
+    quantiles: np.ndarray  # sorted OOF raw probabilities
+
+    def transform(self, raw: object) -> np.ndarray:
+        from scipy.stats import percentileofscore
+
+        raw_arr = np.asarray(raw, dtype=float).ravel()
+        return np.clip(
+            np.array(
+                [
+                    percentileofscore(self.quantiles, float(r), kind="mean") / 100.0
+                    for r in raw_arr
+                ]
+            ),
+            0.0,
+            1.0,
+        )
+
+
 @dataclass
 class CalibratedModel:
     """A base LightGBM classifier plus an optional probability calibrator."""
 
     base: lgb.LGBMClassifier
-    calibrator: Calibrator | None = None
+    calibrator: Calibrator | RankCalibrator | None = None
+    feature_columns: tuple[str, ...] = ()
+    shap_ranges: dict[str, tuple[float, float]] | None = None
+
+    @property
+    def features(self) -> tuple[str, ...]:
+        """Feature columns used by this model (falls back to global default)."""
+        if self.feature_columns:
+            return self.feature_columns
+        from stock_monitor.features.builder import FEATURE_COLUMNS
+
+        return FEATURE_COLUMNS
 
 
 def fit_calibrator(raw: object, y: object, method: str = "sigmoid") -> Calibrator:

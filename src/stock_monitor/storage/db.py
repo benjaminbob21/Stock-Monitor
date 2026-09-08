@@ -806,6 +806,23 @@ class Storage:
             for r in rows
         ]
 
+    def read_scores_history(self, ticker: str, days: int = 30) -> list[dict]:
+        """Read recent score history for a ticker ordered by scored_at ascending."""
+        rows = self._con.execute(
+            """
+            SELECT CAST(scored_at AS DATE) as score_date, conviction
+            FROM scores
+            WHERE ticker = ? AND scored_at >= current_date - ? * INTERVAL '1' DAY
+            ORDER BY scored_at ASC
+            """,
+            [ticker.upper(), days],
+        ).fetchall()
+        return [
+            {"date": str(r[0]), "conviction": int(r[1])}
+            for r in rows
+            if r[1] is not None
+        ]
+
     def read_features(self) -> pd.DataFrame:
         """Return all stored feature rows as a DataFrame."""
         return self._con.execute("SELECT * FROM features ORDER BY ticker, as_of").df()

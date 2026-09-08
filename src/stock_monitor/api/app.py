@@ -302,16 +302,10 @@ def scores_history(ticker: str, state: StateDep, days: int = 30) -> dict[str, ob
     if not state.db_path:
         return {"ticker": upper, "history": []}
     with Storage(state.db_path) as store:
-        rows = store.conn.execute(
-            "SELECT CAST(scored_at AS DATE) as score_date, conviction "
-            "FROM scores "
-            "WHERE ticker = ? AND scored_at >= current_date - cast(? as integer) * interval '1 day' "
-            "ORDER BY scored_at ASC",
-            [upper, days],
-        ).fetchall()
+        history = store.read_scores_history(upper, days=days)
     return {
         "ticker": upper,
-        "history": [{"date": str(r[0]), "conviction": int(r[1])} for r in rows],
+        "history": history,
     }
 
 

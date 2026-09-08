@@ -309,10 +309,15 @@ def compute_dcf(
         return _none_result(reasons, base_fcf=base_fcf)
 
     equity_fact = latest_fact(facts, "StockholdersEquity", as_of)
-    liabilities_fact = latest_fact(facts, "Liabilities", as_of)
     cash_series = _annual_series(facts, "CashAndCashEquivalentsAtCarryingValue", as_of)
     debt_by_year: dict[int, float] = {}
-    for concept in ("LongTermDebtNoncurrent", "LongTermDebtCurrent", "ShortTermBorrowings"):
+    for concept in (
+        "LongTermDebtNoncurrent",
+        "LongTermDebtCurrent",
+        "ShortTermBorrowings",
+        "LongTermDebt",
+        "DebtCurrent",
+    ):
         for year, value in _annual_series(facts, concept, as_of):
             debt_by_year[year] = debt_by_year.get(year, 0.0) + value
     cash = cash_series[-1][1] if cash_series else 0.0
@@ -321,19 +326,21 @@ def compute_dcf(
     bridge: str
     if debt_by_year:
         # Prefer filed borrowings whenever present — total liabilities include
-        # operating items (deferred revenue, payables, leases) that are not
-        # debt, which would overstate net debt for non-financials.
+        # operating items (deferred revenue, payables, customer deposits, leases)
+        # that are not debt, which would drastically overstate net debt.
         net_debt = debt_by_year[max(debt_by_year)] - cash
         bridge = "filed debt − cash"
         if capex_missing:
             bridge += " (financial: liabilities not netted)"
-    elif equity_fact is not None and liabilities_fact is not None:
-        # No filed debt concepts at all: fall back to total liabilities minus
-        # cash as a conservative net-debt stand-in.
-        net_debt = liabilities_fact.value - cash
-        bridge = "liabilities − cash"
+    elif cash_series:
+        # No filed debt concepts found: corporate debt is 0, so net debt is simply
+        # negative cash (net cash position). Total liabilities (such as customer
+        # deposits in brokerages/banks or deferred revenue) must NOT be counted as debt.
+        net_debt = -cash
+        bridge = "no filed debt (net cash)"
     else:
-        bridge = "unavailable — treated as zero"
+        net_debt = 0.0
+        bridge = "no filed debt or cash — treated as zero"
 
     equity_value = ev - net_debt if net_debt is not None else ev
     per_share = equity_value / shares

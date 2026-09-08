@@ -201,10 +201,11 @@ def test_dcf_terminal_weight_no_warning_when_modest() -> None:
         assert not any("perpetuity" in r for r in result["reasons"])
 
 
-def test_dcf_net_debt_bridge_uses_liabilities_minus_cash() -> None:
+def test_dcf_net_debt_bridge_no_filed_debt_uses_net_cash() -> None:
     result = compute_dcf(_healthy_facts(), price=50.0, as_of=dt.date(2026, 8, 28))
-    assert result["inputs"]["net_debt"] == 1500.0  # 2000 − 500
-    assert result["inputs"]["bridge"] == "liabilities − cash"
+    # No filed interest-bearing debt: net debt is 0 - 500 = -500 (net cash)
+    assert result["inputs"]["net_debt"] == -500.0
+    assert result["inputs"]["bridge"] == "no filed debt (net cash)"
 
 
 def test_dcf_growth_anchor_prefers_freshest_revenue_alias() -> None:

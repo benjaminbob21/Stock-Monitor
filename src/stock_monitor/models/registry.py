@@ -22,7 +22,10 @@ Scoreable = lgb.LGBMClassifier | CalibratedModel
 
 def _base_and_calibration(model: Scoreable) -> tuple[lgb.LGBMClassifier, str]:
     if isinstance(model, CalibratedModel):
-        method = model.calibrator.method if model.calibrator is not None else "none"
+        if model.calibrator is None:
+            method = "none"
+        else:
+            method = getattr(model.calibrator, "method", "rank")
         return model.base, method
     return model, "none"
 
@@ -30,9 +33,14 @@ def _base_and_calibration(model: Scoreable) -> tuple[lgb.LGBMClassifier, str]:
 def compute_model_version(model: Scoreable, extra: str = "") -> str:
     """Return a short, stable version string for a fitted (possibly calibrated) model."""
     base, calibration = _base_and_calibration(model)
+    features = (
+        list(model.features)
+        if isinstance(model, CalibratedModel)
+        else list(FEATURE_COLUMNS)
+    )
     payload = json.dumps(
         {
-            "features": list(FEATURE_COLUMNS),
+            "features": features,
             "params": {k: str(v) for k, v in sorted(base.get_params().items())},
             "calibration": calibration,
             "extra": extra,

@@ -49,6 +49,7 @@ class RankCalibrator:
     """
 
     quantiles: np.ndarray  # sorted OOF raw probabilities
+    method: str = "rank"
 
     def transform(self, raw: object) -> np.ndarray:
         from scipy.stats import percentileofscore

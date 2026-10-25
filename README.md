@@ -57,6 +57,7 @@ brew install libomp
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+pre-commit install --hook-type pre-commit --hook-type pre-push
 
 cp .env.example .env   # then set SEC_USER_AGENT to "YourApp/0.1 (your-email)"
 ```

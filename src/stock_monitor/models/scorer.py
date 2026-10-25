@@ -176,7 +176,9 @@ def train_calibrated_model(
                     continue
                 fold_model = lgb.LGBMClassifier(**base.get_params())
                 fold_model.fit(x_sorted.iloc[train_idx], y_sorted.iloc[train_idx])
-                oof[eval_idx] = fold_model.predict_proba(x_sorted.iloc[eval_idx])[:, 1]
+                oof[eval_idx] = np.asarray(
+                    fold_model.predict_proba(x_sorted.iloc[eval_idx])
+                )[:, 1]
             valid = ~np.isnan(oof)
             if valid.sum() >= 2 * cv and y[valid].value_counts().min() >= cv:
                 calibrator = fit_calibrator(oof[valid], y[valid], method=method)

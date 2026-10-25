@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "httpx"]
+dev = ["pytest", "ruff", "mypy", "httpx", "pre-commit"]
 finbert = ["transformers", "torch"]
 
 [project.scripts]

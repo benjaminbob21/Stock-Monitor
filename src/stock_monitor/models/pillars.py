@@ -14,8 +14,6 @@ import numpy as np
 import pandas as pd
 import shap
 
-from stock_monitor.features.builder import FEATURE_COLUMNS
-
 # Mapping from pillar name to constituent feature columns.
 PILLAR_MAP: dict[str, list[str]] = {
     "Momentum": ["mom_12_1", "mom_6_1"],
@@ -65,10 +63,7 @@ def compute_pillar_scores(
             lo, hi = -0.5, 0.5  # symmetric fallback
 
         # Clip and rescale to 0-100
-        if hi > lo:
-            normalized = (total_shap - lo) / (hi - lo)
-        else:
-            normalized = 0.5
+        normalized = (total_shap - lo) / (hi - lo) if hi > lo else 0.5
         score = int(round(max(0, min(100, normalized * 100))))
 
         pillars[pillar_name] = {
@@ -103,10 +98,7 @@ def compute_shap_ranges(
     import warnings
 
     # Sample if dataset is large
-    if len(x) > sample_size:
-        x_sample = x.sample(n=sample_size, random_state=42)
-    else:
-        x_sample = x
+    x_sample = x.sample(n=sample_size, random_state=42) if len(x) > sample_size else x
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)

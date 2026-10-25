@@ -308,7 +308,6 @@ def compute_dcf(
         reasons.append("no share count in SEC filings")
         return _none_result(reasons, base_fcf=base_fcf)
 
-    equity_fact = latest_fact(facts, "StockholdersEquity", as_of)
     cash_series = _annual_series(facts, "CashAndCashEquivalentsAtCarryingValue", as_of)
     debt_by_year: dict[int, float] = {}
     for concept in (

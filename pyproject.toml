@@ -23,7 +23,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "pandera",
-    "duckdb",
+    "duckdb<2",
     "mlflow",
     "fastapi",
     "uvicorn[standard]",

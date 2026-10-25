@@ -22,10 +22,11 @@ Scoreable = lgb.LGBMClassifier | CalibratedModel
 
 def _base_and_calibration(model: Scoreable) -> tuple[lgb.LGBMClassifier, str]:
     if isinstance(model, CalibratedModel):
-        if model.calibrator is None:
-            method = "none"
-        else:
-            method = getattr(model.calibrator, "method", "rank")
+        method = (
+            "none"
+            if model.calibrator is None
+            else getattr(model.calibrator, "method", "rank")
+        )
         return model.base, method
     return model, "none"
 
